@@ -1,0 +1,788 @@
+//
+// Created by notbonzo on 11/20/24.
+//
+
+#ifndef AST_ICC
+#define AST_ICC
+
+#include "Lexer.hh"
+#include <memory>
+#include <print>
+#include <utility>
+#include <vector>
+
+namespace ent::ast {
+    class base_node; // forward declaration
+    using base_node_ptr = std::shared_ptr<base_node>;
+
+    enum class NODE_TYPE {
+        Program,
+        FunctionPrototype,
+        Function,
+        Body,
+        VariableDeclaration,
+        VariableDeclarationAssign,
+        Assignment,
+        Parameter,
+        Expression,
+        Extern,
+        Return,
+        Continue,
+        Break,
+        Increment,
+        Decrement,
+        IndexAssignment,
+        MemberInvoke,
+        ElementCall,
+        If,
+        While,
+        Switch,
+        Case,
+        FunctionCall,
+        Variable,
+        IndexAccess,
+        StringLiteral,
+        Literal,
+        Unary,
+        Binary,
+
+    };
+    enum class EXPRESSION_NODE_OP {
+        ADDITION,
+        MULTIPLICATION,
+        SUBTRACTION,
+        DIVISION,
+        AND,
+        OR,
+        LOGICAL_AND,
+        LOGICAL_OR,
+        EQUAL,
+        NOT_EQUAL,
+        LESS,
+        LESS_EQUAL,
+        GREATER,
+        GREATER_EQUAL
+    };
+    static std::string_view expression_node_op_to_string(const EXPRESSION_NODE_OP op) {
+        switch (op) {
+            case EXPRESSION_NODE_OP::ADDITION: return "ADDITION";
+            case EXPRESSION_NODE_OP::MULTIPLICATION: return "MULTIPLICATION";
+            case EXPRESSION_NODE_OP::SUBTRACTION: return "SUBTRACTION";
+            case EXPRESSION_NODE_OP::DIVISION: return "DIVISION";
+            case EXPRESSION_NODE_OP::LOGICAL_AND: return "LOGICAL_AND";
+            case EXPRESSION_NODE_OP::LOGICAL_OR: return "LOGICAL_OR";
+            case EXPRESSION_NODE_OP::EQUAL: return "EQUAL";
+            case EXPRESSION_NODE_OP::NOT_EQUAL: return "NOT_EQUAL";
+            case EXPRESSION_NODE_OP::LESS: return "LESS";
+            case EXPRESSION_NODE_OP::LESS_EQUAL: return "LESS_EQUAL";
+            case EXPRESSION_NODE_OP::GREATER: return "GREATER";
+            case EXPRESSION_NODE_OP::GREATER_EQUAL: return "GREATER_EQUAL";
+            default: return "UNKNOWN";
+        }
+    }
+
+    class base_node {
+    public:
+        virtual ~base_node();
+        explicit base_node(const NODE_TYPE type) : m_type(type) {}
+        [[nodiscard]] NODE_TYPE type() const { return m_type; }
+        virtual void print(int indent) const;
+    protected:
+        static void print_space(const int index) {
+            for (int i = index + 4; i >= 0; i--) {
+                std::print(" ");
+            }
+        }
+        static void print_start(const int index) {
+            for (int i = 0; i < index; i++) {
+                std::print(" ");
+            }
+            std::println("{{");
+        }
+        static void print_end(const int index) {
+            for (int i = 0; i < index; i++) {
+                std::print(" ");
+            }
+            std::println("}}");
+        }
+
+        NODE_TYPE m_type;
+    };
+    class program_node final : public base_node {
+    public:
+        explicit program_node(std::vector<base_node_ptr> elements) :
+                                base_node(NODE_TYPE::Program), m_elements(std::move(elements)) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Program");
+            print_space(indent);
+            std::println("{{");
+            for (const base_node_ptr& element : m_elements) {
+                element->print(indent + 8);
+            }
+            print_space(indent);
+            std::println("}}");
+            print_end(indent);
+        }
+    private:
+        std::vector<base_node_ptr> m_elements;
+    };
+    class function_prototype_node final : public base_node {
+    public:
+        explicit function_prototype_node(const std::string_view return_type,
+                                         const std::string_view name, std::vector<base_node_ptr> parameters)
+                                        : base_node(NODE_TYPE::FunctionPrototype), m_return_type(return_type),
+                                        m_name(name), m_parameters(std::move(parameters)) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Function Prototype of {}", m_name);
+            print_space(indent);
+            std::println(R"("return_type": "{}")", m_return_type);
+            print_space(indent);
+            std::println("Function Parameters:");
+            print_space(indent);
+            std::println("{{");
+            for (const base_node_ptr& parameter : m_parameters) {
+                parameter->print(indent + 8);
+            }
+            print_space(indent);
+            std::println("}}");
+            print_end(indent);
+        }
+
+    private:
+        std::string_view m_return_type;
+        std::string_view m_name;
+        std::vector<base_node_ptr> m_parameters;
+    };
+    class function_node final : public base_node {
+    public:
+        explicit function_node(const std::string_view return_type,
+                                const std::string_view name,
+                                std::vector<base_node_ptr> parameters,
+                                base_node_ptr body) : base_node(NODE_TYPE::Function),
+                                m_return_type(return_type), m_name(name), m_parameters(std::move(parameters)), m_body(std::move(body)) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Function {}", m_name);
+            print_space(indent);
+            std::println(R"("return_type": "{}")", m_return_type);
+            print_space(indent);
+            std::println("Function Parameters:");
+            print_space(indent);
+            std::println("{{");
+            for (const base_node_ptr& parameter : m_parameters) {
+                parameter->print(indent + 8);
+            }
+            print_space(indent);
+            std::println("}}");
+            print_space(indent);
+            std::println("Function Body:");
+            m_body->print(indent);
+            print_end(indent);
+        }
+
+    private:
+        std::string_view m_return_type;
+        std::string_view m_name;
+        std::vector<base_node_ptr> m_parameters;
+        base_node_ptr m_body;
+    };
+    class body_node final : public base_node {
+    public:
+        explicit body_node(std::vector<base_node_ptr> statements) : base_node(NODE_TYPE::Body),
+                            m_statements(std::move(statements)) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            for (const base_node_ptr& statement : m_statements) {
+                statement->print(indent + 4);
+            }
+            print_end(indent);
+        }
+
+    private:
+        std::vector<base_node_ptr> m_statements;
+    };
+    class variable_declaration_node final : public base_node {
+    public:
+        explicit variable_declaration_node(const std::string_view name,
+                                            const std::string_view type) : base_node(NODE_TYPE::VariableDeclaration),
+                                            m_type(type), m_name(name) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Variable Declaration;");
+            print_space(indent);
+            std::println("-> name: {}", m_name);
+            print_space(indent);
+            std::println("-> type: {}", m_type);
+            print_end(indent);
+        }
+    private:
+        std::string_view m_type;
+        std::string_view m_name;
+    };
+    class variable_declaration_assign_node final : public base_node {
+    public:
+        explicit variable_declaration_assign_node(const std::string_view name,
+                                                const std::string_view type,
+                                                base_node_ptr  rhs) : base_node(NODE_TYPE::VariableDeclarationAssign),
+                                                m_name(name), m_type(type), m_rhs(std::move(rhs)) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Variable Declaration with Assignment;");
+            print_space(indent);
+            std::println("-> name: {}", m_name);
+            print_space(indent);
+            std::println("-> type: {}", m_type);
+            m_rhs->print(indent + 4);
+            print_end(indent);
+        }
+    private:
+        std::string_view m_name;
+        std::string_view m_type;
+        base_node_ptr m_rhs;
+    };
+    class assignment_node final : public base_node {
+    public:
+        explicit assignment_node(const std::string_view name, base_node_ptr rhs) : base_node(NODE_TYPE::Assignment),
+                                m_name(name), m_rhs(std::move(rhs)) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Variable Assignment;");
+            print_space(indent);
+            std::println("-> name: {}", m_name);
+            m_rhs->print(indent + 4);
+            print_end(indent);
+        }
+    private:
+        std::string_view m_name;
+        base_node_ptr m_rhs;
+    };
+    class parameter_node final : public base_node {
+    public:
+        explicit parameter_node(const std::string_view name,
+                                const std::string_view type) : base_node(NODE_TYPE::Parameter),
+                                m_name(name), m_type(type) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Parameter {} of type {}", m_name, m_type);
+            print_end(indent);
+        }
+    private:
+        std::string_view m_name;
+        std::string_view m_type;
+    };
+    class expression_node final : public base_node {
+    public:
+        explicit expression_node(base_node_ptr lhs,
+                                const EXPRESSION_NODE_OP op,
+                                base_node_ptr rhs) : base_node(NODE_TYPE::Expression),
+                                m_lhs(std::move(lhs)), m_rhs(std::move(rhs)), m_op(op) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Expression {}", expression_node_op_to_string(m_op));
+            m_lhs->print(indent + 4);
+            m_rhs->print(indent + 4);
+            print_end(indent);
+        }
+    private:
+        base_node_ptr m_lhs;
+        base_node_ptr m_rhs;
+        EXPRESSION_NODE_OP m_op;
+    };
+    class extern_node final : public base_node {
+    public:
+        explicit extern_node(base_node_ptr child) : base_node(NODE_TYPE::Extern), m_child(std::move(child)) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Extern:");
+            m_child->print(indent + 4);
+            print_end(indent);
+        }
+    private:
+        base_node_ptr m_child;
+    };
+    class return_node final : public base_node {
+    public:
+        explicit return_node(base_node_ptr value)
+            : base_node(NODE_TYPE::Return), m_value(std::move(value)) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Return;");
+            if (m_value) {
+                print_space(indent);
+                std::println("Value:");
+                m_value->print(indent + 4);
+            }
+            print_end(indent);
+        }
+    private:
+        base_node_ptr m_value;
+    };
+
+    class break_node final : public base_node {
+    public:
+        break_node() : base_node(NODE_TYPE::Break) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Break;");
+            print_end(indent);
+        }
+    };
+
+    class continue_node final : public base_node {
+    public:
+        continue_node() : base_node(NODE_TYPE::Continue) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Continue;");
+            print_end(indent);
+        }
+    };
+    class increment_node final : public base_node {
+    public:
+        explicit increment_node(const std::string_view name)
+            : base_node(NODE_TYPE::Expression), m_name(name) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Increment;");
+            print_space(indent);
+            std::println("-> name: {}", m_name);
+            print_end(indent);
+        }
+    private:
+        std::string_view m_name;
+    };
+
+    class decrement_node final : public base_node {
+    public:
+        explicit decrement_node(const std::string_view name)
+            : base_node(NODE_TYPE::Expression), m_name(name) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Decrement;");
+            print_space(indent);
+            std::println("-> name: {}", m_name);
+            print_end(indent);
+        }
+    private:
+        std::string_view m_name;
+    };
+    class index_assignment_node final : public base_node {
+    public:
+        explicit index_assignment_node(const std::string_view array_name,
+                                       base_node_ptr index,
+                                       base_node_ptr rhs)
+            : base_node(NODE_TYPE::IndexAssignment), m_array_name(array_name),
+              m_index(std::move(index)), m_rhs(std::move(rhs)) {}
+
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Index Assignment;");
+            print_space(indent);
+            std::println("-> array name: {}", m_array_name);
+            print_space(indent);
+            std::println("Index:");
+            m_index->print(indent + 4);
+            print_space(indent);
+            std::println("Value:");
+            m_rhs->print(indent + 4);
+            print_end(indent);
+        }
+
+    private:
+        std::string_view m_array_name;
+        base_node_ptr m_index;
+        base_node_ptr m_rhs;
+    };
+
+    class member_invoke_node final : public base_node {
+    public:
+        explicit member_invoke_node(base_node_ptr base,
+                                    const std::string_view member_name)
+            : base_node(NODE_TYPE::MemberInvoke),
+              m_base(std::move(base)),
+              m_member_name(member_name) {}
+
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Member Access;");
+            print_space(indent);
+            std::println("-> base:");
+            m_base->print(indent + 4);
+            print_space(indent);
+            std::println("-> member: {}", m_member_name);
+            print_end(indent);
+        }
+
+    [[nodiscard]] const base_node_ptr& base() const { return m_base; }
+    [[nodiscard]] std::string_view member_name() const { return m_member_name; }
+
+    private:
+        base_node_ptr m_base;
+        std::string_view m_member_name;
+    };
+
+    class element_call_node final : public base_node {
+    public:
+        explicit element_call_node(const std::string_view callee_name,
+                                   std::vector<base_node_ptr> arguments,
+                                   base_node_ptr base = nullptr)
+            : base_node(NODE_TYPE::ElementCall),
+              m_callee_name(callee_name),
+              m_arguments(std::move(arguments)),
+              m_base(std::move(base)) {}
+
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Element Call;");
+            if (m_base) {
+                print_space(indent);
+                std::println("-> base:");
+                m_base->print(indent + 4);
+            }
+            print_space(indent);
+            std::println("-> callee: {}", m_callee_name);
+            print_space(indent);
+            std::println("Arguments:");
+            print_space(indent);
+            std::println("{{");
+            for (const auto& arg : m_arguments) {
+                arg->print(indent + 8);
+            }
+            print_space(indent);
+            std::println("}}");
+            print_end(indent);
+        }
+
+        [[nodiscard]] std::string_view callee_name() const { return m_callee_name; }
+        [[nodiscard]] const base_node_ptr& base() const { return m_base; }
+        [[nodiscard]] const std::vector<base_node_ptr>& arguments() const { return m_arguments; }
+
+    private:
+        std::string_view m_callee_name;
+        std::vector<base_node_ptr> m_arguments;
+        base_node_ptr m_base;
+    };
+
+    class if_node final : public base_node {
+    public:
+        if_node(base_node_ptr condition, base_node_ptr true_body, base_node_ptr false_body)
+            : base_node(NODE_TYPE::If), m_condition(std::move(condition)),
+              m_true_body(std::move(true_body)), m_false_body(std::move(false_body)) {}
+
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("If Statement;");
+            print_space(indent);
+            std::println("Condition:");
+            m_condition->print(indent + 4);
+            print_space(indent);
+            std::println("True Body:");
+            m_true_body->print(indent + 4);
+            if (m_false_body) {
+                print_space(indent);
+                std::println("False Body:");
+                m_false_body->print(indent + 4);
+            }
+            print_end(indent);
+        }
+
+        [[nodiscard]] const base_node_ptr& condition() const { return m_condition; }
+        [[nodiscard]] const base_node_ptr& true_body() const { return m_true_body; }
+        [[nodiscard]] const base_node_ptr& false_body() const { return m_false_body; }
+
+    private:
+        base_node_ptr m_condition;
+        base_node_ptr m_true_body;
+        base_node_ptr m_false_body;
+    };
+
+    class while_node final : public base_node {
+    public:
+        while_node(base_node_ptr condition, base_node_ptr body)
+            : base_node(NODE_TYPE::While), m_condition(std::move(condition)),
+              m_body(std::move(body)) {}
+
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("While Loop;");
+            print_space(indent);
+            std::println("Condition:");
+            m_condition->print(indent + 4);
+            print_space(indent);
+            std::println("Body:");
+            m_body->print(indent + 4);
+            print_end(indent);
+        }
+
+        [[nodiscard]] const base_node_ptr& condition() const { return m_condition; }
+        [[nodiscard]] const base_node_ptr& body() const { return m_body; }
+
+    private:
+        base_node_ptr m_condition;
+        base_node_ptr m_body;
+    };
+
+    class switch_node final : public base_node {
+    public:
+        switch_node(base_node_ptr expression, std::vector<base_node_ptr> cases, base_node_ptr default_case)
+            : base_node(NODE_TYPE::Switch), m_expression(std::move(expression)),
+              m_cases(std::move(cases)), m_default_case(std::move(default_case)) {}
+
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Switch Statement;");
+            print_space(indent);
+            std::println("Expression:");
+            m_expression->print(indent + 4);
+            print_space(indent);
+            std::println("Cases:");
+            print_space(indent);
+            std::println("{{");
+            for (const auto& c : m_cases) {
+                c->print(indent + 8);
+            }
+            print_space(indent);
+            std::println("}}");
+            if (m_default_case) {
+                print_space(indent);
+                std::println("Default Case:");
+                m_default_case->print(indent + 4);
+            }
+            print_end(indent);
+        }
+
+        [[nodiscard]] const base_node_ptr& expression() const { return m_expression; }
+        [[nodiscard]] const std::vector<base_node_ptr>& cases() const { return m_cases; }
+        [[nodiscard]] const base_node_ptr& default_case() const { return m_default_case; }
+
+    private:
+        base_node_ptr m_expression;
+        std::vector<base_node_ptr> m_cases;
+        base_node_ptr m_default_case;
+    };
+
+    class case_node final : public base_node {
+    public:
+        case_node(base_node_ptr value, base_node_ptr body)
+            : base_node(NODE_TYPE::Case), m_value(std::move(value)),
+              m_body(std::move(body)) {}
+
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Case Statement;");
+            print_space(indent);
+            std::println("Value:");
+            m_value->print(indent + 4);
+            print_space(indent);
+            std::println("Body:");
+            m_body->print(indent + 4);
+            print_end(indent);
+        }
+
+        [[nodiscard]] const base_node_ptr& value() const { return m_value; }
+        [[nodiscard]] const base_node_ptr& body() const { return m_body; }
+
+    private:
+        base_node_ptr m_value;
+        base_node_ptr m_body;
+    };
+
+    class function_call_node final : public base_node {
+    public:
+        function_call_node(const std::string_view name, std::vector<base_node_ptr> arguments)
+            : base_node(NODE_TYPE::FunctionCall), m_name(name),
+              m_arguments(std::move(arguments)) {}
+
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Function Call;");
+            print_space(indent);
+            std::println("-> name: {}", m_name);
+            print_space(indent);
+            std::println("Arguments:");
+            print_space(indent);
+            std::println("{{");
+            for (const auto& arg : m_arguments) {
+                arg->print(indent + 8);
+            }
+            print_space(indent);
+            std::println("}}");
+            print_end(indent);
+        }
+
+        [[nodiscard]] std::string_view name() const { return m_name; }
+        [[nodiscard]] const std::vector<base_node_ptr>& arguments() const { return m_arguments; }
+
+    private:
+        std::string_view m_name;
+        std::vector<base_node_ptr> m_arguments;
+    };
+    class variable_node final : public base_node {
+    public:
+        explicit variable_node(const std::string_view name) : base_node(NODE_TYPE::Variable), m_name(name) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Variable: {}", m_name);
+            print_end(indent);
+        }
+    private:
+        std::string_view m_name;
+    };
+    class index_access_node final : public base_node {
+    public:
+        explicit index_access_node(const std::string_view name, base_node_ptr index) : base_node(NODE_TYPE::IndexAccess),
+                                                                                        m_name(name), m_index(std::move(index)) {}
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Index Access to {}", m_name);
+            print_space(indent);
+            std::println("At index:");
+            m_index->print(indent + 4);
+            print_end(indent);
+        }
+    private:
+        std::string_view m_name;
+        base_node_ptr m_index;
+    };
+    class string_literal_node final : public base_node {
+    public:
+        explicit string_literal_node(const std::string_view value)
+            : base_node(NODE_TYPE::StringLiteral), m_value(value) {}
+
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("String Literal: \"{}\"", m_value);
+            print_end(indent);
+        }
+
+        [[nodiscard]] std::string_view value() const { return m_value; }
+
+    private:
+        std::string_view m_value;
+    };
+
+    class literal_node final : public base_node {
+    public:
+        enum class LITERAL_TYPE { Decimal, Hexadecimal, Binary };
+
+        explicit literal_node(const std::string_view value, LITERAL_TYPE type)
+            : base_node(NODE_TYPE::Literal), m_value(value), m_type(type) {}
+
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Literal: {}, Type: {}", m_value, literal_type_to_string(m_type));
+            print_end(indent);
+        }
+
+        [[nodiscard]] std::string_view value() const { return m_value; }
+        [[nodiscard]] LITERAL_TYPE get_type() const { return m_type; }
+
+    private:
+        std::string_view m_value;
+        LITERAL_TYPE m_type;
+
+        static std::string_view literal_type_to_string(const LITERAL_TYPE type) {
+            switch (type) {
+                case LITERAL_TYPE::Decimal: return "Decimal";
+                case LITERAL_TYPE::Hexadecimal: return "Hexadecimal";
+                case LITERAL_TYPE::Binary: return "Binary";
+                default: return "Unknown";
+            }
+        }
+    };
+
+    class unary_node final : public base_node {
+    public:
+        explicit unary_node(const lexer::token::TOKEN_TYPE op, base_node_ptr operand)
+            : base_node(NODE_TYPE::Unary), m_op(op), m_operand(std::move(operand)) {}
+
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Unary Expression: Operator {}", operator_to_string(m_op));
+            m_operand->print(indent + 4);
+            print_end(indent);
+        }
+
+        [[nodiscard]] lexer::token::TOKEN_TYPE op() const { return m_op; }
+        [[nodiscard]] const base_node_ptr& operand() const { return m_operand; }
+
+    private:
+        lexer::token::TOKEN_TYPE m_op;
+        base_node_ptr m_operand;
+
+        static std::string_view operator_to_string(lexer::token::TOKEN_TYPE op) {
+            switch (op) {
+                case lexer::token::TOKEN_TYPE::Plus: return "+";
+                case lexer::token::TOKEN_TYPE::Minus: return "-";
+                case lexer::token::TOKEN_TYPE::Exclamation: return "!";
+                default: return "Unknown";
+            }
+        }
+    };
+
+    class binary_node final : public base_node {
+    public:
+        explicit binary_node(base_node_ptr lhs, const lexer::token::TOKEN_TYPE op, base_node_ptr rhs)
+            : base_node(NODE_TYPE::Binary), m_lhs(std::move(lhs)), m_op(op), m_rhs(std::move(rhs)) {}
+
+        void print(const int indent) const override {
+            print_start(indent);
+            print_space(indent);
+            std::println("Binary Expression: Operator {}", operator_to_string(m_op));
+            m_lhs->print(indent + 4);
+            m_rhs->print(indent + 4);
+            print_end(indent);
+        }
+
+        [[nodiscard]] const base_node_ptr& lhs() const { return m_lhs; }
+        [[nodiscard]] lexer::token::TOKEN_TYPE op() const { return m_op; }
+        [[nodiscard]] const base_node_ptr& rhs() const { return m_rhs; }
+
+    private:
+        base_node_ptr m_lhs;
+        lexer::token::TOKEN_TYPE m_op;
+        base_node_ptr m_rhs;
+
+        static std::string_view operator_to_string(lexer::token::TOKEN_TYPE op) {
+            switch (op) {
+                case lexer::token::TOKEN_TYPE::Plus: return "+";
+                case lexer::token::TOKEN_TYPE::Minus: return "-";
+                case lexer::token::TOKEN_TYPE::Star: return "*";
+                case lexer::token::TOKEN_TYPE::Slash: return "/";
+                default: return "Unknown";
+            }
+        }
+    };
+
+}
+
+#endif //AST_ICC

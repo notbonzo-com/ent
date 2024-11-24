@@ -1,0 +1,3 @@
+header {
+    extern dword floaty;
+}
