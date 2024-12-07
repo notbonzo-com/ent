@@ -344,13 +344,15 @@ namespace ent {
     void lexer::handle_number() {
         std::string number;
         if (previous() == '0') {
-            const char c = next();
+            const char c = peak();
             if (c == 'b') {
+                next();
                 while (std::isdigit(peak()) && (peak() == '0' || peak() == '1')) { number += next(); }
                 add_token(token::TOKEN_TYPE::Binary, number);
                 return;
             }
             if (c == 'x') {
+                next();
                 while (std::isxdigit(peak())) { number += next(); }
                 add_token(token::TOKEN_TYPE::Hexadecimal, number);
                 return;

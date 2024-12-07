@@ -1,641 +1,685 @@
-//
-// Created by notbonzo on 11/20/24.
-//
-
 #include "Parser.hh"
-#include <string>
-#include <functional>
 
 namespace ent {
-    parser::parser(std::vector<lexer::token>& tokens) : m_tokens(tokens), m_types({
-            "void", "byte", "word", "dword", "qword", "sbyte", "sword", "sdword", "sqword"
-    }) {
-        m_scope.m_scoped_stack.emplace(); // global stack
-    }
-    using TOKEN_TYPE = lexer::token::TOKEN_TYPE;
-    int parser::get_precedence(const lexer::token::TOKEN_TYPE type) {
-        switch (type) {
-            case TOKEN_TYPE::Star:
-            case TOKEN_TYPE::Slash: return 3; // Highest precedence
-            case TOKEN_TYPE::Plus:
-            case TOKEN_TYPE::Minus: return 2;
-            case TOKEN_TYPE::Equal:
-            case TOKEN_TYPE::NotEqual:
-            case TOKEN_TYPE::Less:
-            case TOKEN_TYPE::LessEqual:
-            case TOKEN_TYPE::Greater:
-            case TOKEN_TYPE::GreaterEqual: return 1; // Lowest precedence
-            default: return 0;
+    const lexer::token& parser::peek(const size_t offset) const {
+        if (m_current + offset < m_tokens.size()) {
+            return m_tokens[m_current + offset];
         }
-    }
-    void parser::_scope::add(const std::string_view name) {
-        if (m_scoped_stack.empty()) {
-            throw parser_out_of_range("parser::_scope::add(): scope is empty");
-        }
-        m_scoped_stack.top().insert(name);
-    }
-    int parser::_scope::operator++(int) {
-        m_scoped_stack.emplace();
-        return 0;
-    }
-    int parser::_scope::operator--(int) {
-        if (m_scoped_stack.empty()) {
-            throw parser_out_of_range("parser::_scope::operator--: empty stack");
-        }
-        m_scoped_stack.pop();
-        return 0;
-    }
-    bool parser::_scope::is_declared(const std::string_view name) const {
-        std::stack<std::set<std::string_view>> tmp_stack = m_scoped_stack;
-        while (!tmp_stack.empty()) {
-            if (const std::set<std::string_view>& current_set = tmp_stack.top(); current_set.contains(name)) {
-                return true;
-            }
-            tmp_stack.pop();
-        }
-        return false;
+        return m_tokens.back();
     }
 
-    const lexer::token& parser::consume() {
-        if (m_current >= m_tokens.size()) {
-            throw parser_out_of_range("parser::consume(): token out of range");
-        }
-        return m_tokens[m_current++];
-    }
-
-    const lexer::token& parser::peak(const int offset) const {
-        if (m_current + offset >= m_tokens.size()) {
-            throw std::out_of_range("parser::peak(): token out of range");
-        }
-        return m_tokens[m_current + offset];
+    const lexer::token& parser::current() const {
+        return peek(0);
     }
 
     const lexer::token& parser::previous() const {
-        [[unlikely]] if (m_current == 0) {
-            throw std::out_of_range("parser::previous(): empty stack");
-        }
         return m_tokens[m_current - 1];
     }
 
-    void parser::expect(const lexer::token::TOKEN_TYPE expected, const std::string_view str) {
-        if (!check(expected)) {
-            throw parser_error(std::format(
-                "parser::handle_type(): Unexpected token '{}' at line {}, column {}. {}.",
-                peak().to_string(), peak().line, peak().column, str));
-
-        }
-
-        consume();
-    }
-
-    bool parser::check(const lexer::token::TOKEN_TYPE expected) const {
-        if (m_current >= m_tokens.size()) {
-            throw parser_out_of_range("parser::check(): token out of range");
-        }
-        return peak().type == expected;
-    }
-
-    std::string parser::resolve_typedef(const std::string_view type) const {
-        auto current = std::string(type);
-        while (true) {
-            const auto it = m_typedefs.find(current);
-            if (it == m_typedefs.end()) {
-                break;
-            }
-            current = it->second;
-
-            if (current == type) {
-                throw std::runtime_error("parser::resolve_typedef(): cyclic typedef detected");
-            }
-        }
-        return current;
-    }
-
-    bool parser::is_type(const std::string_view name) const {
-        const auto last_non_star = name.find_last_not_of('*');
-        const auto base_type = name.substr(0, last_non_star + 1);
-        return std::ranges::find(m_types, base_type) != m_types.end();
-    }
-
-    bool parser::is_struct_member(const std::string_view struct_name, const std::string_view member_name) const {
-        if (const auto it = m_structs.find(std::string(struct_name)); it != m_structs.end()) {
-            const auto& members = it->second;
-            return std::ranges::find(members, member_name) != members.end();
+    bool parser::match(const lexer::token::TOKEN_TYPE type) {
+        if (check(type)) {
+            advance();
+            return true;
         }
         return false;
     }
-    std::string parser::handle_type() {
-        const std::string base_type = consume().value;
-        if (!is_type(base_type)) {
-            throw parser_error("parser::handle_type(): Expected a valid base type");
-        }
 
-        std::string full_type = base_type;
-        while (check(TOKEN_TYPE::Star)) {
-            consume();
-            full_type += '*';
-        }
-
-        return full_type;
+    bool parser::check(const lexer::token::TOKEN_TYPE type) const {
+        if (is_at_end()) return false;
+        return peek().type == type;
     }
 
-    ast::base_node_ptr parser::parse() {
-        std::vector<ast::base_node_ptr> statements;
-        while (!check(TOKEN_TYPE::EOFToken)) {
-            if (check(TOKEN_TYPE::Function)) {
-                statements.push_back(parse_function());
-            } else if (check(TOKEN_TYPE::Typedef)) { // TODO
-            } else if (check(TOKEN_TYPE::Struct)) { // TODO
-            } else if (check(TOKEN_TYPE::Extern)) {
-                statements.push_back(parse_extern());
-            } else if (is_type(peak().value)) {
-                if (peak(2).type == TOKEN_TYPE::Semicolon) {
-                    statements.push_back(parse_global_variable_declaration());
-                } else if (peak(2).type == TOKEN_TYPE::Assign) {
-                    statements.push_back(parse_global_variable_declaration_assign());
-                }
-                throw parser_expected_error("parser::parse(): Expected ';' or '=' after variable declaration");
-            } else {
-                std::println("Got {}!", peak().to_string());
-                throw parser_expected_error("parser::parse(): Expected statement");
+    void parser::advance() {
+        if (!is_at_end()) m_current++;
+    }
+
+    void parser::consume(const lexer::token::TOKEN_TYPE type, const std::string_view message) {
+        if (check(type)) {
+            advance();
+            return;
+        }
+        error(current(), std::format("{} got: {}", message, peek().to_string()));
+    }
+
+    [[noreturn]] void parser::error(const lexer::token& tok, const std::string_view message) {
+        throw parser_error(std::string(message), tok.line, tok.column);
+    }
+
+    bool parser::is_at_end() const {
+        return current().type == lexer::token::TOKEN_TYPE::EOFToken;
+    }
+
+    ast::base_node_ptr parser::parse_program() {
+        std::vector<ast::base_node_ptr> elements;
+
+        while (!is_at_end()) {
+            elements.push_back(parse_top_level_decl());
+        }
+
+        return std::make_shared<ast::program_node>(std::move(elements));
+    }
+
+    // Distinguish between:
+    // extern fn name(...) -> type;         (extern foreign function)
+    // fn name(...) -> type;                (forward-declared function)
+    // fn name(...) -> type { ... }         (defined function)
+    // extern type name;                    (extern global variable)
+    // type name; / type name = expr;       (global variable)
+    ast::base_node_ptr parser::parse_top_level_decl() {
+        if (match(lexer::token::TOKEN_TYPE::Extern)) {
+            if (match(lexer::token::TOKEN_TYPE::Function)) {
+                // extern fn name(...) -> type;
+                return parse_function_prototype(true);
             }
+            // extern type name; a global extern variable
+            return parse_global_variable(true);
         }
-        return std::make_shared<ast::program_node>(std::move(statements));
+
+        if (match(lexer::token::TOKEN_TYPE::Function)) {
+            // fn name(...) -> type; or fn name(...) -> type { ... }
+            return parse_function(false);
+        }
+
+        // Otherwise, must be a global variable (type name[=expr];)
+        if (is_type_keyword(current())) {
+            return parse_global_variable(false);
+        }
+
+        error(current(), "Unexpected token at top level. Expected extern, fn, or a type for a global variable.");
     }
 
-    ast::base_node_ptr parser::parse_function() {
+    // Parse a function (either forward-declared or defined) when we've already consumed 'fn'.
+    // format: fn name(params) -> type; or fn name(params) -> type { ... }
+    ast::base_node_ptr parser::parse_function(bool is_extern) {
+        consume(lexer::token::TOKEN_TYPE::Identifier, "Expected function name after 'fn'.");
+        const std::string_view name = previous().value;
+
+        consume(lexer::token::TOKEN_TYPE::LeftParen, "Expected '(' after function name.");
         std::vector<ast::base_node_ptr> parameters;
-        expect(TOKEN_TYPE::Function, "parser::parse_function(): Expected 'fn' keyword for function definition");
-        const std::string_view name = consume().value;
-        if (name.empty()) {
-            throw parser_error("parser::parse_function(): Functions name is empty");
-        }
-        m_scope++;
-        expect(TOKEN_TYPE::LeftParen, "parser::parse_function(): Expected '('");
-        if (!check(TOKEN_TYPE::RightParen)) {
-            const std::string_view type = handle_type();
-            if (type.empty()) {
-                throw parser_expected_error("parser::parse_function(): Expected ')'");
-            }
-            if (!is_type(type)) {
-                std::println("Got type: '{}'", type);
-                throw parser_expected_error("parser::parse_function(): Expected parameter type after '('");
-            }
-            const std::string_view parameter_name = consume().value;
-            parameters.push_back(std::make_shared<ast::parameter_node>(parameter_name, type));
-            m_scope.add(parameter_name);
-            while (check(TOKEN_TYPE::Comma)) {
-                expect(TOKEN_TYPE::Comma, "parser::parse_function(): Expected ','");
-                const std::string_view loop_type = handle_type();
-                if (loop_type.empty() || !is_type(loop_type)) {
-                    throw parser_expected_error("parser::parse_function(): Expected type name");
-                }
-                std::string_view loop_parameter_name = consume().value;
-                parameters.push_back(std::make_shared<ast::parameter_node>(loop_parameter_name, loop_type));
-                m_scope.add(loop_parameter_name);
-            }
-        }
-        expect(TOKEN_TYPE::RightParen, "parser::parse_function(): Expected ')'");
-        expect(TOKEN_TYPE::Minus, "parser::parse_function(): Expected '->'");
-        expect(TOKEN_TYPE::Greater, "parser::parse_function(): Expected '->'");
 
-        const std::string_view return_type = handle_type();
-        if (!is_type(return_type)) {
-            throw parser_expected_error("parser::parse_function(): Expected return type");
+        // parameters: (type name, type name, ...)
+        if (!check(lexer::token::TOKEN_TYPE::RightParen)) {
+            do {
+                auto ptype = parse_type();
+                consume(lexer::token::TOKEN_TYPE::Identifier, "Expected parameter name.");
+                std::string_view pname = previous().value;
+                parameters.push_back(std::make_shared<ast::parameter_node>(pname, ptype));
+            } while (match(lexer::token::TOKEN_TYPE::Comma));
         }
-        if (check(TOKEN_TYPE::LeftBrace)) {
-            expect(TOKEN_TYPE::LeftBrace, "parser::parse_function(): Expected '{'");
-            const ast::base_node_ptr body = parse_block();
-            expect(TOKEN_TYPE::RightBrace, "parser::parse_function(): Expected '}'");
-            m_scope--;
-            expect(TOKEN_TYPE::Semicolon, "parser::parse_function(): Expected ';'");
 
-            m_prototypes.push_back(name);
-            m_function.push_back(name);
-            return std::make_shared<ast::function_node>(return_type, name, parameters, body);
+        consume(lexer::token::TOKEN_TYPE::RightParen, "Expected ')' after parameters.");
+        consume(lexer::token::TOKEN_TYPE::Minus, "Expected '->' after function parameters.");
+        consume(lexer::token::TOKEN_TYPE::Greater, "Expected '->' after function parameters.");
+        auto rtype = parse_type();
+
+        // Now check if it's a definition or just a declaration
+        if (match(lexer::token::TOKEN_TYPE::Semicolon)) {
+            // forward-declared function with mangling
+            return std::make_shared<ast::function_prototype_node>(rtype, name, parameters);
         }
-        expect(TOKEN_TYPE::Semicolon, "parser::parse_function(): Expected ';'");
-        m_scope--; // discard the scope, as we are not a function
-        if (std::ranges::find(m_prototypes, name) != m_prototypes.end()) { // TODO: Replace with a function
-            throw parser_error("parser::parse_function(): Function prototype already defined.");
-        }
-        m_prototypes.push_back(name);
-        return std::make_shared<ast::function_prototype_node>(return_type, name, parameters);
+        // must be a definition
+        consume(lexer::token::TOKEN_TYPE::LeftBrace, "Expected '{' to start function body.");
+        auto body = parse_block();
+        consume(lexer::token::TOKEN_TYPE::Semicolon, "Expected ';' after function body");
+        return std::make_shared<ast::function_node>(rtype, name, parameters, body);
     }
 
-    ast::base_node_ptr parser::parse_extern() {
-        expect(TOKEN_TYPE::Extern, "parser::parse_extern(): Expected 'extern' keyword");
+    // parse_function_prototype for extern function:
+    // extern fn name(...) -> type; or fn name(..) -> type;
+    ast::base_node_ptr parser::parse_function_prototype(bool is_extern) {
+        consume(lexer::token::TOKEN_TYPE::Identifier, "Expected function name after 'fn'.");
+        const std::string_view name = previous().value;
 
-        if (check(TOKEN_TYPE::Function)) {
-            ast::base_node_ptr function = parse_function();
-            if (function->type() != ast::NODE_TYPE::FunctionPrototype) {
-                throw parser_error("parser::parse_extern(): Function definition can not be extern");
-            }
-            return std::make_shared<ast::extern_node>(function);
+        consume(lexer::token::TOKEN_TYPE::LeftParen, "Expected '(' after function name.");
+        std::vector<ast::base_node_ptr> parameters;
+        if (!check(lexer::token::TOKEN_TYPE::RightParen)) {
+            do {
+                auto ptype = parse_type();
+                consume(lexer::token::TOKEN_TYPE::Identifier, "Expected parameter name.");
+                std::string_view pname = previous().value;
+                parameters.push_back(std::make_shared<ast::parameter_node>(pname, ptype));
+            } while (match(lexer::token::TOKEN_TYPE::Comma));
         }
-        if (is_type(peak().value)) {
-            return std::make_shared<ast::extern_node>(parse_global_variable_declaration(true));
-        }
-        throw std::runtime_error("parser::parse_extern(): Expected declaration of extern entity");
+        consume(lexer::token::TOKEN_TYPE::RightParen, "Expected ')' after parameters.");
+        consume(lexer::token::TOKEN_TYPE::Minus, "Expected '->' after function parameters.");
+        consume(lexer::token::TOKEN_TYPE::Greater, "Expected '->' after function parameters.");
+        auto rtype = parse_type();
+        consume(lexer::token::TOKEN_TYPE::Semicolon, "Expected ';' after extern function prototype.");
+        return std::make_shared<ast::extern_node>(
+                std::make_shared<ast::function_prototype_node>(rtype, name, parameters)
+        );
     }
 
-    ast::base_node_ptr parser::parse_global_variable_declaration(const bool externV) {
-        const std::string_view type = handle_type();
-        if (type.empty() || !is_type(type)) {
-            throw parser_error("parser::parse_global_variable_declaration(): Expected variable type");
+    // parse_global_variable:
+    // If is_extern == true:
+    //    extern type name;
+    // else:
+    //    type name; or type name = expr;
+    ast::base_node_ptr parser::parse_global_variable(const bool is_extern) {
+        auto vtype = parse_type();
+        consume(lexer::token::TOKEN_TYPE::Identifier, "Expected variable name.");
+        std::string_view name = previous().value;
+
+        ast::base_node_ptr init = nullptr;
+        if (is_extern) {
+            // extern type name; no initialization allowed
+            consume(lexer::token::TOKEN_TYPE::Semicolon, "Expected ';' after extern variable.");
+            auto var_decl = std::make_shared<ast::variable_declaration_node>(name, vtype);
+            // wrap in extern_node
+            return std::make_shared<ast::extern_node>(var_decl);
         }
-        const std::string_view name = consume().value;
-        if (name.empty()) {
-            throw parser_error("parser::parse_global_variable_declaration(): Expected variable name");
+        // type name [= expr];
+
+        if (match(lexer::token::TOKEN_TYPE::Assign)) {
+            init = parse_expression();
         }
-        if (m_scope.is_declared(name) && !externV) {
-            throw parser_error("parser::parse_global_variable_declaration(): Variable already in use");
+        consume(lexer::token::TOKEN_TYPE::Semicolon, "Expected ';' after global variable declaration.");
+        if (init) {
+            return std::make_shared<ast::variable_declaration_assign_node>(name, vtype, init);
         }
-        expect(TOKEN_TYPE::Semicolon, "parser::parse_global_variable_declaration(): Expected ';'");
-        m_scope.add(name);
-        return std::make_shared<ast::variable_declaration_node>(name, type);
+        return std::make_shared<ast::variable_declaration_node>(name, vtype);
     }
 
-    ast::base_node_ptr parser::parse_global_variable_declaration_assign() {
-        const std::string_view type = handle_type();
-        if (type.empty() || !is_type(type)) {
-            throw parser_error("parser::parse_global_variable_declaration_assign(): Expected variable type");
+    variable_type parser::parse_type() {
+        if (!is_type_keyword(current())) {
+            error(current(), "Expected type keyword.");
         }
-        const std::string_view name = consume().value;
-        if (name.empty()) {
-            throw parser_error("parser::parse_global_variable_declaration_assign(): Expected variable name");
+        const std::string_view base = current().value;
+        advance();
+        int ptr_count = 0;
+        while (match(lexer::token::TOKEN_TYPE::Star)) {
+            ptr_count++;
         }
-        if (m_scope.is_declared(name)) {
-            throw parser_error("parser::parse_global_variable_declaration_assign(): Variable already in use");
+        variable_type vtype;
+        vtype.base_type = base;
+        vtype.pointer = ptr_count;
+        vtype.is_struct = false; // for now (struct are going to be ouchy)
+        return vtype;
+    }
+
+    bool parser::is_type_keyword(const lexer::token& tok) {
+        switch (tok.type) {
+            case lexer::token::TOKEN_TYPE::Void:
+            case lexer::token::TOKEN_TYPE::Byte:
+            case lexer::token::TOKEN_TYPE::Word:
+            case lexer::token::TOKEN_TYPE::DWord:
+            case lexer::token::TOKEN_TYPE::QWord:
+            case lexer::token::TOKEN_TYPE::SByte:
+            case lexer::token::TOKEN_TYPE::SWord:
+            case lexer::token::TOKEN_TYPE::SDWord:
+            case lexer::token::TOKEN_TYPE::SQWord:
+                return true;
+            default:
+                return false;
         }
-        expect(TOKEN_TYPE::Assign, "parser::parse_global_variable_declaration_assign(): Expected '='");
-        ast::base_node_ptr rhs = parse_expression();
-        expect(TOKEN_TYPE::Semicolon, "parser::parse_global_variable_declaration_assign(): Expected ';'");
-        m_scope.add(name);
-        return std::make_shared<ast::variable_declaration_assign_node>(name, type, rhs);
+    }
+
+    // === Statements & Blocks ===
+    ast::base_node_ptr parser::parse_statement() {
+        if (match(lexer::token::TOKEN_TYPE::If)) return parse_if_statement();
+        if (match(lexer::token::TOKEN_TYPE::While)) return parse_while_statement();
+        if (match(lexer::token::TOKEN_TYPE::Switch)) return parse_switch_statement();
+        if (match(lexer::token::TOKEN_TYPE::Return)) return parse_return_statement();
+        if (match(lexer::token::TOKEN_TYPE::Break)) return parse_break_statement();
+        if (match(lexer::token::TOKEN_TYPE::Continue)) return parse_continue_statement();
+
+        if (is_type_keyword(current())) {
+            return parse_variable_declaration(false);
+        }
+
+        auto expr = parse_expression();
+        consume(lexer::token::TOKEN_TYPE::Semicolon, "Expected ';' after expression.");
+        return expr;
     }
 
     ast::base_node_ptr parser::parse_block() {
         std::vector<ast::base_node_ptr> statements;
-        m_scope++;
-        while (!check(TOKEN_TYPE::RightBrace) && !check(TOKEN_TYPE::EOFToken)) {
-            if (is_type(peak().value) &&
-                peak(1).type == TOKEN_TYPE::Identifier) {
-                if (peak(2).type == TOKEN_TYPE::Semicolon) {
-                    statements.push_back(parse_variable_declaration());
-                } else if (peak(1).type == TOKEN_TYPE::Assign) {
-                    statements.push_back(parse_variable_declaration_assign());
-                } else {
-                    throw parser_error("parser::parse_block(): Expected '=' or ';' after variable declaration");
-                }
-            }
-
-            else if (check(TOKEN_TYPE::While)) {
-                statements.push_back(parse_while());
-            }
-
-            else if (check(TOKEN_TYPE::If)) {
-                statements.push_back(parse_if());
-            }
-
-            else if (check(TOKEN_TYPE::Switch)) {
-                statements.push_back(parse_switch());
-            }
-
-            else if (check(TOKEN_TYPE::Return)) {
-                consume();
-                ast::base_node_ptr expression = parse_expression();
-                statements.push_back(std::make_shared<ast::return_node>(expression));
-            }
-
-            else if (check(TOKEN_TYPE::Break)) {
-                consume();
-                statements.push_back(std::make_shared<ast::break_node>());
-            }
-
-            else if (check(TOKEN_TYPE::Continue)) {
-                consume();
-                statements.push_back(std::make_shared<ast::continue_node>());
-            }
-
-            else if (check(TOKEN_TYPE::Identifier)) {
-                if (m_scope.is_declared(peak().value)) {
-                    if (peak(1).type == TOKEN_TYPE::Increment) {
-                        statements.push_back(std::make_shared<ast::increment_node>(consume().value));
-                        consume();
-                        expect(TOKEN_TYPE::Semicolon, "parser::parse_block(): Expected ';' after post-increment");
-                    } else if (peak(1).type == TOKEN_TYPE::Decrement) {
-                        statements.push_back(std::make_shared<ast::decrement_node>(consume().value));
-                        consume();
-                        expect(TOKEN_TYPE::Semicolon, "parser::parse_block(): Expected ';' after post-decrement");
-                    } else if (peak(1).type == TOKEN_TYPE::Assign) {
-                        std::string_view name = consume().value;
-                        if (name.empty()) {
-                            throw parser_error("parser::parse_block(): Expected variable name");
-                        }
-                        expect(TOKEN_TYPE::Assign, "parser::parse_block(): Expected '=' after variable name");
-                        ast::base_node_ptr rhs = parse_expression();
-                        expect(TOKEN_TYPE::Semicolon, "parser::parse_block(): Expected ';' after assignment");
-                        statements.push_back(std::make_shared<ast::assignment_node>(name, rhs));
-                    } else if (peak(1).type == TOKEN_TYPE::LeftBracket) {
-                        std::string_view name = consume().value;
-                        expect(TOKEN_TYPE::LeftBracket, "parser::parse_block(): Expected '['");
-                        ast::base_node_ptr index = parse_expression();
-                        expect(TOKEN_TYPE::RightBracket, "parser::parse_block(): Expected ']'");
-                        expect(TOKEN_TYPE::Assign, "parser::parse_block(): Expected '='");
-                        ast::base_node_ptr rhs = parse_expression();
-                        expect(TOKEN_TYPE::Semicolon, "parser::parse_block(): Expected ';' after assignment");
-                        statements.push_back(std::make_shared<ast::index_assignment_node>(name, index, rhs));
-                    } else if (peak(1).type == TOKEN_TYPE::Period) {
-                        std::string_view base_name = consume().value;
-                        if (base_name.empty()) {
-                            throw parser_error("parser::parse_block(): Expected identifier before '.'");
-                        }
-                        ast::base_node_ptr base = std::make_shared<ast::variable_node>(base_name);
-
-                        while (check(TOKEN_TYPE::Period)) {
-                            consume();
-                            std::string_view member_name = consume().value;
-
-                            if (member_name.empty()) {
-                                throw parser_error("parser::parse_block(): Expected member name after '.'");
-                            }
-
-                            if (check(TOKEN_TYPE::LeftParen)) {
-                                consume();
-                                std::vector<ast::base_node_ptr> args;
-
-                                if (!check(TOKEN_TYPE::RightParen)) {
-                                    do {
-                                        args.push_back(parse_expression());
-                                    } while (check(TOKEN_TYPE::Comma) && consume().type == TOKEN_TYPE::Comma);
-                                }
-
-                                expect(TOKEN_TYPE::RightParen, "parser::parse_block(): Expected ')' after function arguments");
-
-                                // Transform into UFCS: `variable.method(args...)` -> `method(variable, args...)`
-                                args.insert(args.begin(), base);
-                                base = std::make_shared<ast::element_call_node>(member_name, args);
-                            } else {
-                                base = std::make_shared<ast::member_invoke_node>(base, member_name);
-                            }
-                        }
-
-                        expect(TOKEN_TYPE::Semicolon, "parser::parse_block(): Expected ';' after member access or UFCS");
-                        statements.push_back(base);
-                    }
-                } else if (std::ranges::find(m_function, peak().value) != m_function.end()) { // TODO: Make into a function
-                    statements.push_back(parse_function_call());
-                } else {
-                    throw parser_error("parser::parse_block(): undefined variable or function name");
-                }
-            } else if (check(TOKEN_TYPE::Star)) { // TODO Dereference pointers
-            } else {
-                ast::base_node_ptr expression = parse_expression();
-                statements.push_back(expression);
-                expect(TOKEN_TYPE::Semicolon, "parser::parse_block(): Expected ';' after expression");
-            }
+        while (!check(lexer::token::TOKEN_TYPE::RightBrace) && !is_at_end()) {
+            statements.push_back(parse_statement());
         }
-        m_scope--;
-        return std::make_shared<ast::body_node>(statements);
+        consume(lexer::token::TOKEN_TYPE::RightBrace, "Expected '}' after block.");
+        return std::make_shared<ast::body_node>(std::move(statements));
     }
 
-    ast::base_node_ptr parser::parse_variable_declaration() {
-        const std::string_view type = handle_type();
-        if (type.empty() || !is_type(type)) {
-            throw parser_error("parser::parse_variable_declaration(): Expected variable type");
-        }
-
-        const std::string_view name = consume().value;
-        if (name.empty()) {
-            throw parser_error("parser::parse_variable_declaration(): Expected variable name");
-        }
-
-        if (m_scope.is_declared(name)) {
-            throw parser_error("parser::parse_variable_declaration(): Variable already declared");
-        }
-
-        expect(TOKEN_TYPE::Semicolon, "parser::parse_variable_declaration(): Expected ';' after variable declaration");
-        m_scope.add(name);
-        return std::make_shared<ast::variable_declaration_node>(name, type);
-    }
-
-    ast::base_node_ptr parser::parse_variable_declaration_assign() {
-        const std::string_view type = handle_type();
-        if (type.empty() || !is_type(type)) {
-            throw parser_error("parser::parse_variable_declaration_assign(): Expected variable type");
-        }
-
-        const std::string_view name = consume().value;
-        if (name.empty()) {
-            throw parser_error("parser::parse_variable_declaration_assign(): Expected variable name");
-        }
-
-        if (m_scope.is_declared(name)) {
-            throw parser_error("parser::parse_variable_declaration_assign(): Variable already declared");
-        }
-
-        expect(TOKEN_TYPE::Assign, "parser::parse_variable_declaration_assign(): Expected '=' after variable name");
-
-        ast::base_node_ptr rhs = parse_expression();
-        expect(TOKEN_TYPE::Semicolon, "parser::parse_variable_declaration_assign(): Expected ';' after variable assignment");
-
-        m_scope.add(name);
-        return std::make_shared<ast::variable_declaration_assign_node>(name, type, rhs);
-    }
-
-    ast::base_node_ptr parser::parse_while() {
-        expect(TOKEN_TYPE::While, "parser::parse_while(): Expected 'while' keyword");
-
-        expect(TOKEN_TYPE::LeftParen, "parser::parse_while(): Expected '(' after 'while'");
-        ast::base_node_ptr condition = parse_expression();
-        expect(TOKEN_TYPE::RightParen, "parser::parse_while(): Expected ')' after condition");
-
-        expect(TOKEN_TYPE::LeftBrace, "parser::parse_while(): Expected '{' after 'while' condition");
-        ast::base_node_ptr body = parse_block();
-        expect(TOKEN_TYPE::RightBrace, "parser::parse_while(): Expected '}' to close 'while' block");
-
-        return std::make_shared<ast::while_node>(condition, body);
-    }
-
-    ast::base_node_ptr parser::parse_if() {
-        expect(TOKEN_TYPE::If, "parser::parse_if(): Expected 'if' keyword");
-
-        expect(TOKEN_TYPE::LeftParen, "parser::parse_if(): Expected '(' after 'if'");
-        ast::base_node_ptr condition = parse_expression();
-        expect(TOKEN_TYPE::RightParen, "parser::parse_if(): Expected ')' after condition");
-
-        expect(TOKEN_TYPE::LeftBrace, "parser::parse_if(): Expected '{' after 'if' condition");
-        ast::base_node_ptr true_body = parse_block();
-        expect(TOKEN_TYPE::RightBrace, "parser::parse_if(): Expected '}' to close 'if' block");
+    ast::base_node_ptr parser::parse_if_statement() {
+        consume(lexer::token::TOKEN_TYPE::LeftParen, "Expected '(' after 'if'.");
+        auto condition = parse_expression();
+        consume(lexer::token::TOKEN_TYPE::RightParen, "Expected ')' after if condition.");
+        consume(lexer::token::TOKEN_TYPE::LeftBrace, "Expected '{' after if condition.");
+        auto true_body = parse_block();
 
         ast::base_node_ptr false_body = nullptr;
-        if (check(TOKEN_TYPE::Else)) {
-            consume();
 
-            if (check(TOKEN_TYPE::If)) {
-                false_body = parse_if();
+        while (check(lexer::token::TOKEN_TYPE::Else) && (peek(1).type == lexer::token::TOKEN_TYPE::If)) {
+            consume(lexer::token::TOKEN_TYPE::Else, "Expected 'else' before 'if' in 'else if'.");
+            consume(lexer::token::TOKEN_TYPE::If, "Expected 'if' after 'else'.");
+
+            consume(lexer::token::TOKEN_TYPE::LeftParen, "Expected '(' after 'else if'.");
+            auto else_if_condition = parse_expression();
+            consume(lexer::token::TOKEN_TYPE::RightParen, "Expected ')' after else if condition.");
+            consume(lexer::token::TOKEN_TYPE::LeftBrace, "Expected '{' after else if condition.");
+            auto else_if_body = parse_block();
+
+            auto else_if_node = std::make_shared<ast::if_node>(else_if_condition, else_if_body, nullptr);
+
+            if (!false_body) {
+                false_body = else_if_node;
             } else {
-                expect(TOKEN_TYPE::LeftBrace, "parser::parse_if(): Expected '{' after 'else'");
-                false_body = parse_block();
-                expect(TOKEN_TYPE::RightBrace, "parser::parse_if(): Expected '}' to close 'else' block");
+                auto current = std::dynamic_pointer_cast<ast::if_node>(false_body);
+                while (current->false_body() && current->false_body()->type() == ast::NODE_TYPE::If) {
+                    current = std::dynamic_pointer_cast<ast::if_node>(current->false_body());
+                }
+                current->set_false_body(else_if_node);
+            }
+        }
+
+        if (match(lexer::token::TOKEN_TYPE::Else)) {
+            consume(lexer::token::TOKEN_TYPE::LeftBrace, "Expected '{' after 'else'.");
+            const auto else_body = parse_block();
+
+            if (!false_body) {
+                false_body = else_body;
+            } else {
+                auto current = std::dynamic_pointer_cast<ast::if_node>(false_body);
+                while (current->false_body() && current->false_body()->type() == ast::NODE_TYPE::If) {
+                    current = std::dynamic_pointer_cast<ast::if_node>(current->false_body());
+                }
+                current->set_false_body(else_body);
             }
         }
 
         return std::make_shared<ast::if_node>(condition, true_body, false_body);
     }
 
-    ast::base_node_ptr parser::parse_switch() {
-        expect(TOKEN_TYPE::Switch, "parser::parse_switch(): Expected 'switch' keyword");
-        expect(TOKEN_TYPE::LeftParen, "parser::parse_switch(): Expected '(' after 'switch'");
-        ast::base_node_ptr condition = parse_expression();
-        expect(TOKEN_TYPE::RightParen, "parser::parse_switch(): Expected ')' after condition");
-        expect(TOKEN_TYPE::LeftBrace, "parser::parse_switch(): Expected '{' after 'switch'");
+
+    ast::base_node_ptr parser::parse_while_statement() {
+        consume(lexer::token::TOKEN_TYPE::LeftParen, "Expected '(' after 'while'.");
+        auto condition = parse_expression();
+        consume(lexer::token::TOKEN_TYPE::RightParen, "Expected ')' after while condition.");
+        consume(lexer::token::TOKEN_TYPE::LeftBrace, "Expected '{' after while condition.");
+        auto body = parse_block();
+        return std::make_shared<ast::while_node>(condition, body);
+    }
+
+    ast::base_node_ptr parser::parse_switch_statement() {
+        consume(lexer::token::TOKEN_TYPE::LeftParen, "Expected '(' after 'switch'.");
+        auto expr = parse_expression();
+        consume(lexer::token::TOKEN_TYPE::RightParen, "Expected ')' after switch expression.");
+        consume(lexer::token::TOKEN_TYPE::LeftBrace, "Expected '{' after switch.");
 
         std::vector<ast::base_node_ptr> cases;
         ast::base_node_ptr default_case = nullptr;
-
-        while (!check(TOKEN_TYPE::RightBrace)) {
-            if (check(TOKEN_TYPE::Default)) {
-                if (default_case) {
-                    throw parser_error("parser::parse_switch(): Multiple 'default' cases in 'switch'");
+        while (!check(lexer::token::TOKEN_TYPE::RightBrace) && !is_at_end()) {
+            if (match(lexer::token::TOKEN_TYPE::Case)) {
+                cases.push_back(parse_case_statement());
+            } else if (match(lexer::token::TOKEN_TYPE::Default)) {
+                consume(lexer::token::TOKEN_TYPE::Colon, "Expected ':' after 'default'.");
+                std::vector<ast::base_node_ptr> stmts;
+                while (!check(lexer::token::TOKEN_TYPE::Case) &&
+                       !check(lexer::token::TOKEN_TYPE::Default) &&
+                       !check(lexer::token::TOKEN_TYPE::RightBrace) &&
+                       !is_at_end()) {
+                    stmts.push_back(parse_statement());
                 }
-                default_case = parse_case();
+                default_case = std::make_shared<ast::body_node>(std::move(stmts));
             } else {
-                cases.push_back(parse_case());
+                error(current(), "Expected 'case' or 'default' in switch.");
             }
         }
 
-        expect(TOKEN_TYPE::RightBrace, "parser::parse_switch(): Expected '}' to close 'switch' block");
-        return std::make_shared<ast::switch_node>(condition, cases, default_case);
+        consume(lexer::token::TOKEN_TYPE::RightBrace, "Expected '}' after switch.");
+        return std::make_shared<ast::switch_node>(expr, cases, default_case);
     }
 
-    ast::base_node_ptr parser::parse_function_call() {
-        const std::string_view function_name = consume().value;
-        if (function_name.empty()) {
-            throw parser_error("parser::parse_function_call(): Expected function name");
+    ast::base_node_ptr parser::parse_case_statement() {
+        auto val_expr = parse_expression();
+        consume(lexer::token::TOKEN_TYPE::Colon, "Expected ':' after case value.");
+        std::vector<ast::base_node_ptr> stmts;
+        while (!check(lexer::token::TOKEN_TYPE::Case) &&
+               !check(lexer::token::TOKEN_TYPE::Default) &&
+               !check(lexer::token::TOKEN_TYPE::RightBrace) &&
+               !is_at_end()) {
+            stmts.push_back(parse_statement());
         }
-
-        expect(TOKEN_TYPE::LeftParen, "parser::parse_function_call(): Expected '(' after function name");
-        std::vector<ast::base_node_ptr> arguments;
-
-        if (!check(TOKEN_TYPE::RightParen)) {
-            do {
-                arguments.push_back(parse_expression());
-            } while (check(TOKEN_TYPE::Comma) && consume().type == TOKEN_TYPE::Comma);
-        }
-
-        expect(TOKEN_TYPE::RightParen, "parser::parse_function_call(): Expected ')' after arguments");
-        return std::make_shared<ast::function_call_node>(function_name, arguments);
+        return std::make_shared<ast::case_node>(val_expr, std::make_shared<ast::body_node>(std::move(stmts)));
     }
 
-    ast::base_node_ptr parser::parse_case() {
-        if (check(TOKEN_TYPE::Case)) {
-            consume();
-            ast::base_node_ptr value = parse_expression();
-            expect(TOKEN_TYPE::Colon, "parser::parse_case(): Expected ':' after case value");
-            std::vector<ast::base_node_ptr> body;
-            while (!check(TOKEN_TYPE::Case) && !check(TOKEN_TYPE::Default) && !check(TOKEN_TYPE::RightBrace)) {
-                body.push_back(parse_block());
-            }
-            return std::make_shared<ast::case_node>(value, std::make_shared<ast::body_node>(body));
+    ast::base_node_ptr parser::parse_return_statement() {
+        if (!check(lexer::token::TOKEN_TYPE::Semicolon)) {
+            auto val = parse_expression();
+            consume(lexer::token::TOKEN_TYPE::Semicolon, "Expected ';' after return value.");
+            return std::make_shared<ast::return_node>(val);
         }
-
-        if (check(TOKEN_TYPE::Default)) {
-            consume();
-            expect(TOKEN_TYPE::Colon, "parser::parse_case(): Expected ':' after 'default'");
-            std::vector<ast::base_node_ptr> body;
-            while (!check(TOKEN_TYPE::Case) && !check(TOKEN_TYPE::Default) && !check(TOKEN_TYPE::RightBrace)) {
-                body.push_back(parse_block());
-            }
-            return std::make_shared<ast::case_node>(nullptr, std::make_shared<ast::body_node>(body));
-        }
-
-        throw parser_error("parser::parse_case(): Expected 'case' or 'default'");
+        advance();
+        return std::make_shared<ast::return_node>(nullptr);
     }
 
+    ast::base_node_ptr parser::parse_break_statement() {
+        consume(lexer::token::TOKEN_TYPE::Semicolon, "Expected ';' after 'break'.");
+        return std::make_shared<ast::break_node>();
+    }
+
+    ast::base_node_ptr parser::parse_continue_statement() {
+        consume(lexer::token::TOKEN_TYPE::Semicolon, "Expected ';' after 'continue'.");
+        return std::make_shared<ast::continue_node>();
+    }
+
+    // type name [= expr];
+    ast::base_node_ptr parser::parse_variable_declaration(bool allow_extern) {
+        const auto vtype = parse_type();
+        consume(lexer::token::TOKEN_TYPE::Identifier, "Expected variable name after type.");
+        std::string_view name = previous().value;
+
+        ast::base_node_ptr init = nullptr;
+        if (match(lexer::token::TOKEN_TYPE::Assign)) {
+            init = parse_expression();
+        }
+        consume(lexer::token::TOKEN_TYPE::Semicolon, "Expected ';' after variable declaration.");
+        if (init) {
+            return std::make_shared<ast::variable_declaration_assign_node>(name, vtype, init);
+        }
+        return std::make_shared<ast::variable_declaration_node>(name, vtype);
+    }
+
+    // === Expressions ===
     ast::base_node_ptr parser::parse_expression() {
-        std::function<ast::base_node_ptr()> parse_unary;
-        std::function<ast::base_node_ptr()> parse_primary;
+        return parse_assignment_expr();
+    }
 
-        parse_unary = [&]() -> ast::base_node_ptr {
-            if (check(TOKEN_TYPE::Plus) || check(TOKEN_TYPE::Minus) || check(TOKEN_TYPE::Exclamation)) {
-                auto op = consume().type;
-                return std::make_shared<ast::unary_node>(op, parse_unary());
+    ast::base_node_ptr parser::parse_assignment_expr() {
+        auto lhs = parse_logical_or_expr();
+
+        if (match(lexer::token::TOKEN_TYPE::Assign)) {
+            auto rhs = parse_assignment_expr();
+
+            const auto var = std::dynamic_pointer_cast<ast::variable_node>(lhs);
+            if (!var) {
+                error(current(), "Left-hand side of assignment must be assignable.");
             }
-            return parse_primary();
-        };
 
-        parse_primary = [&]() -> ast::base_node_ptr {
-            if (check(TOKEN_TYPE::LeftParen)) {
-                consume();
-                auto expr = parse_expression();
-                expect(TOKEN_TYPE::RightParen, "Expected ')'");
-                return expr;
+            return std::make_shared<ast::assignment_node>(var->get_name(), rhs);
+        }
+
+        return lhs;
+    }
+
+    ast::base_node_ptr parser::parse_logical_or_expr() {
+        auto node = parse_logical_and_expr();
+        while (match(lexer::token::TOKEN_TYPE::Pipe) && match(lexer::token::TOKEN_TYPE::Pipe)) {
+            auto right = parse_logical_and_expr();
+            node = std::make_shared<ast::expression_node>(node, ast::EXPRESSION_NODE_OP::LOGICAL_OR, right);
+        }
+        return node;
+    }
+
+    ast::base_node_ptr parser::parse_logical_and_expr() {
+        auto node = parse_equality_expr();
+        while (match(lexer::token::TOKEN_TYPE::Ampersand) && match(lexer::token::TOKEN_TYPE::Ampersand)) {
+            auto right = parse_equality_expr();
+            node = std::make_shared<ast::expression_node>(node, ast::EXPRESSION_NODE_OP::LOGICAL_AND, right);
+        }
+        return node;
+    }
+
+    ast::base_node_ptr parser::parse_equality_expr() {
+        auto node = parse_relational_expr();
+        while (true) {
+            if (match(lexer::token::TOKEN_TYPE::Equal)) {
+                auto right = parse_relational_expr();
+                node = std::make_shared<ast::expression_node>(node, ast::EXPRESSION_NODE_OP::EQUAL, right);
+            } else if (match(lexer::token::TOKEN_TYPE::NotEqual)) {
+                auto right = parse_relational_expr();
+                node = std::make_shared<ast::expression_node>(node, ast::EXPRESSION_NODE_OP::NOT_EQUAL, right);
+            } else {
+                break;
             }
-            if (check(TOKEN_TYPE::Identifier)) {
-                std::string_view identifier = consume().value;
-                auto node = std::static_pointer_cast<ast::base_node>(std::make_shared<ast::variable_node>(identifier));
+        }
+        return node;
+    }
 
-                while (check(TOKEN_TYPE::Period)) {
-                    consume();
-                    std::string_view member_name = consume().value;
+    ast::base_node_ptr parser::parse_relational_expr() {
+        auto node = parse_additive_expr();
+        while (true) {
+            if (match(lexer::token::TOKEN_TYPE::Less)) {
+                auto right = parse_additive_expr();
+                node = std::make_shared<ast::expression_node>(node, ast::EXPRESSION_NODE_OP::LESS, right);
+            } else if (match(lexer::token::TOKEN_TYPE::LessEqual)) {
+                auto right = parse_additive_expr();
+                node = std::make_shared<ast::expression_node>(node, ast::EXPRESSION_NODE_OP::LESS_EQUAL, right);
+            } else if (match(lexer::token::TOKEN_TYPE::Greater)) {
+                auto right = parse_additive_expr();
+                node = std::make_shared<ast::expression_node>(node, ast::EXPRESSION_NODE_OP::GREATER, right);
+            } else if (match(lexer::token::TOKEN_TYPE::GreaterEqual)) {
+                auto right = parse_additive_expr();
+                node = std::make_shared<ast::expression_node>(node, ast::EXPRESSION_NODE_OP::GREATER_EQUAL, right);
+            } else {
+                break;
+            }
+        }
+        return node;
+    }
 
-                    if (check(TOKEN_TYPE::LeftParen)) {
-                        consume();
-                        std::vector<ast::base_node_ptr> arguments;
-                        if (!check(TOKEN_TYPE::RightParen)) {
-                            do {
-                                arguments.push_back(parse_expression());
-                            } while (check(TOKEN_TYPE::Comma) && consume().type == TOKEN_TYPE::Comma);
-                        }
-                        expect(TOKEN_TYPE::RightParen, "Expected ')'");
-                        arguments.insert(arguments.begin(), node);
-                        node = std::static_pointer_cast<ast::base_node>(
-                            std::make_shared<ast::element_call_node>(member_name, arguments));
-                    } else {
-                        node = std::static_pointer_cast<ast::base_node>(
-                            std::make_shared<ast::member_invoke_node>(node, member_name));
+    ast::base_node_ptr parser::parse_additive_expr() {
+        auto node = parse_multiplicative_expr();
+        while (true) {
+            if (match(lexer::token::TOKEN_TYPE::Plus)) {
+                auto right = parse_multiplicative_expr();
+                node = std::make_shared<ast::expression_node>(node, ast::EXPRESSION_NODE_OP::ADDITION, right);
+            } else if (match(lexer::token::TOKEN_TYPE::Minus)) {
+                auto right = parse_multiplicative_expr();
+                node = std::make_shared<ast::expression_node>(node, ast::EXPRESSION_NODE_OP::SUBTRACTION, right);
+            } else {
+                break;
+            }
+        }
+        return node;
+    }
+
+    ast::base_node_ptr parser::parse_multiplicative_expr() {
+        auto node = parse_unary_expr();
+        while (true) {
+            if (match(lexer::token::TOKEN_TYPE::Star)) {
+                auto right = parse_unary_expr();
+                node = std::make_shared<ast::expression_node>(node, ast::EXPRESSION_NODE_OP::MULTIPLICATION, right);
+            } else if (match(lexer::token::TOKEN_TYPE::Slash)) {
+                auto right = parse_unary_expr();
+                node = std::make_shared<ast::expression_node>(node, ast::EXPRESSION_NODE_OP::DIVISION, right);
+            } else {
+                break;
+            }
+        }
+        return node;
+    }
+
+    ast::base_node_ptr parser::parse_unary_expr() {
+        if (match(lexer::token::TOKEN_TYPE::Increment)) {
+            const auto operand = parse_unary_expr();
+            const auto var = std::dynamic_pointer_cast<ast::variable_node>(operand);
+            if (!var) {
+                error(current(), "Prefix ++ operator applied to a non-variable expression.");
+            }
+            return std::make_shared<ast::increment_node>(var->get_name(), true);
+        }
+        if (match(lexer::token::TOKEN_TYPE::Decrement)) {
+            const auto operand = parse_unary_expr();
+            const auto var = std::dynamic_pointer_cast<ast::variable_node>(operand);
+            if (!var) {
+                error(current(), "Prefix -- operator applied to a non-variable expression.");
+            }
+            return std::make_shared<ast::decrement_node>(var->get_name(), true);
+        }
+
+        if (match(lexer::token::TOKEN_TYPE::Minus) ||
+            match(lexer::token::TOKEN_TYPE::Plus) ||
+            match(lexer::token::TOKEN_TYPE::Exclamation) ||
+            match(lexer::token::TOKEN_TYPE::Ampersand) ||
+            match(lexer::token::TOKEN_TYPE::Star)) {
+            auto op = previous().type;
+            auto operand = parse_unary_expr();
+            return std::make_shared<ast::unary_node>(op, operand);
+        }
+        return parse_primary_expr();
+    }
+
+    ast::base_node_ptr parser::parse_primary_expr() {
+        if (match(lexer::token::TOKEN_TYPE::LeftParen)) {
+            auto expr = parse_expression();
+            consume(lexer::token::TOKEN_TYPE::RightParen, "Expected ')' after expression.");
+            expr = parse_postfix_operators(expr);
+            return expr;
+        }
+
+        if (match(lexer::token::TOKEN_TYPE::Decimal)) {
+            auto node = dynamic_pointer_cast<ast::base_node>(std::make_shared<ast::literal_node>(previous().value, ast::literal_node::LITERAL_TYPE::Decimal));
+            node = parse_postfix_operators(node);
+            return node;
+        }
+
+        if (match(lexer::token::TOKEN_TYPE::Hexadecimal)) {
+            auto node = dynamic_pointer_cast<ast::base_node>(std::make_shared<ast::literal_node>(previous().value, ast::literal_node::LITERAL_TYPE::Hexadecimal));
+            node = parse_postfix_operators(node);
+            return node;
+        }
+
+        if (match(lexer::token::TOKEN_TYPE::Binary)) {
+            auto node = dynamic_pointer_cast<ast::base_node>(std::make_shared<ast::literal_node>(previous().value, ast::literal_node::LITERAL_TYPE::Binary));
+            node = parse_postfix_operators(node);
+            return node;
+        }
+
+        if (match(lexer::token::TOKEN_TYPE::StringLiteral)) {
+            auto node = dynamic_pointer_cast<ast::base_node>(std::make_shared<ast::string_literal_node>(previous().value));
+            node = parse_postfix_operators(node);
+            return node;
+        }
+
+        if (match(lexer::token::TOKEN_TYPE::Identifier)) {
+            auto node = parse_function_call_or_variable();
+            node = parse_postfix_operators(node);
+            return node;
+        }
+
+        error(current(), std::format("Unexpected token in expression; got {}", previous().to_string()));
+        return nullptr;
+    }
+
+    ast::base_node_ptr parser::parse_function_call_or_variable() {
+        auto name = previous().value;
+
+        ast::base_node_ptr node;
+        if (match(lexer::token::TOKEN_TYPE::LeftParen)) {
+            std::vector<ast::base_node_ptr> args;
+            if (!check(lexer::token::TOKEN_TYPE::RightParen)) {
+                do {
+                    args.push_back(parse_expression());
+                } while (match(lexer::token::TOKEN_TYPE::Comma));
+            }
+            consume(lexer::token::TOKEN_TYPE::RightParen, "Expected ')' after arguments.");
+            node = std::make_shared<ast::function_call_node>(name, std::move(args));
+        } else {
+            node = std::make_shared<ast::variable_node>(name);
+        }
+
+        while (true) {
+            if (match(lexer::token::TOKEN_TYPE::LeftBracket)) {
+                // Indexing: var[idx]
+                auto idx = parse_expression();
+                consume(lexer::token::TOKEN_TYPE::RightBracket, "Expected ']' after index.");
+                node = std::make_shared<ast::index_access_node>(std::dynamic_pointer_cast<ast::variable_node>(node)->get_name(), idx);
+            } else if (match(lexer::token::TOKEN_TYPE::Period)) {
+                // Member access: node.member or node.member(...)
+                consume(lexer::token::TOKEN_TYPE::Identifier, "Expected member name after '.'.");
+                std::string_view member = previous().value;
+
+                // UFCS? (and todo struct's function pointers)
+                if (check(lexer::token::TOKEN_TYPE::LeftParen)) {
+                    advance();
+                    std::vector<ast::base_node_ptr> args;
+
+                    args.push_back(node);
+
+                    if (!check(lexer::token::TOKEN_TYPE::RightParen)) {
+                        do {
+                            args.push_back(parse_expression());
+                        } while (match(lexer::token::TOKEN_TYPE::Comma));
                     }
+                    consume(lexer::token::TOKEN_TYPE::RightParen, "Expected ')' after arguments.");
+
+                    node = std::make_shared<ast::function_call_node>(member, std::move(args));
+                } else {
+                    node = std::make_shared<ast::member_invoke_node>(node, member);
                 }
-                return node;
+            } else {
+                break;
             }
-            if (check(TOKEN_TYPE::Decimal) || check(TOKEN_TYPE::Hexadecimal) || check(TOKEN_TYPE::Binary)) {
-                return parse_literal();
-            }
-            if (check(TOKEN_TYPE::StringLiteral)) {
-                return std::make_shared<ast::string_literal_node>(consume().value);
-            }
-            throw parser_error("Unexpected token in primary expression");
-        };
+        }
 
-        auto parse_binary = [&](const int precedence, auto&& self) -> ast::base_node_ptr {
-            auto left = parse_unary();
-            while (true) {
-                int current_precedence = get_precedence(peak().type);
-                if (current_precedence < precedence) break;
-                auto op = consume().type;
-                auto right = self(current_precedence + 1, self);
-                left = std::make_shared<ast::binary_node>(left, op, right);
-            }
-            return left;
-        };
-
-        return parse_binary(0, parse_binary);
+        return node;
     }
 
 
-    ast::base_node_ptr parser::parse_literal() {
-        if (check(TOKEN_TYPE::Decimal)) {
-            return std::make_shared<ast::literal_node>(consume().value, ast::literal_node::LITERAL_TYPE::Decimal);
+    ast::EXPRESSION_NODE_OP parser::token_to_expression_op(const lexer::token::TOKEN_TYPE type) {
+        switch (type) {
+            case lexer::token::TOKEN_TYPE::Plus: return ast::EXPRESSION_NODE_OP::ADDITION;
+            case lexer::token::TOKEN_TYPE::Minus: return ast::EXPRESSION_NODE_OP::SUBTRACTION;
+            case lexer::token::TOKEN_TYPE::Star: return ast::EXPRESSION_NODE_OP::MULTIPLICATION;
+            case lexer::token::TOKEN_TYPE::Slash: return ast::EXPRESSION_NODE_OP::DIVISION;
+            default: return ast::EXPRESSION_NODE_OP::ADDITION; // fallback
         }
-        if (check(TOKEN_TYPE::Hexadecimal)) {
-            return std::make_shared<ast::literal_node>(consume().value, ast::literal_node::LITERAL_TYPE::Hexadecimal);
-        }
-        if (check(TOKEN_TYPE::Binary)) {
-            return std::make_shared<ast::literal_node>(consume().value, ast::literal_node::LITERAL_TYPE::Binary);
-        }
-        throw parser_error("Unexpected literal type");
     }
 
-} // ent
+    bool parser::is_unary_operator(const lexer::token& tok) {
+        return tok.type == lexer::token::TOKEN_TYPE::Plus ||
+               tok.type == lexer::token::TOKEN_TYPE::Minus ||
+                tok.type == lexer::token::TOKEN_TYPE::Exclamation ||
+               tok.type == lexer::token::TOKEN_TYPE::Ampersand ||
+               tok.type == lexer::token::TOKEN_TYPE::Star;
+    }
+
+    bool parser::is_binary_operator(const lexer::token& tok) {
+        switch (tok.type) {
+            case lexer::token::TOKEN_TYPE::Plus:
+            case lexer::token::TOKEN_TYPE::Minus:
+            case lexer::token::TOKEN_TYPE::Star:
+            case lexer::token::TOKEN_TYPE::Slash:
+            case lexer::token::TOKEN_TYPE::Equal:
+            case lexer::token::TOKEN_TYPE::NotEqual:
+            case lexer::token::TOKEN_TYPE::Less:
+            case lexer::token::TOKEN_TYPE::LessEqual:
+            case lexer::token::TOKEN_TYPE::Greater:
+            case lexer::token::TOKEN_TYPE::GreaterEqual:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    ast::base_node_ptr parser::parse_postfix_operators(ast::base_node_ptr expr) {
+        // Postfix increments/decrements only make sense on variables or something that can be incremented.
+        // We'll assume only variables can be incremented. If `expr` is not a variable, throw an error.
+        // TODO relax this rule to support something like arr[i]++ etc. but then we would have to store
+        // more than just a name in increment_node/decrement_node.
+
+        while (true) {
+            if (match(lexer::token::TOKEN_TYPE::Increment)) {
+                // Postfix ++
+                const auto var = std::dynamic_pointer_cast<ast::variable_node>(expr);
+                if (!var) {
+                    error(current(), "Postfix ++ operator applied to non-variable expression.");
+                }
+                expr = std::make_shared<ast::increment_node>(var->get_name(), false);
+            } else if (match(lexer::token::TOKEN_TYPE::Decrement)) {
+                // Postfix --
+                const auto var = std::dynamic_pointer_cast<ast::variable_node>(expr);
+                if (!var) {
+                    error(current(), "Postfix -- operator applied to non-variable expression.");
+                }
+                expr = std::make_shared<ast::decrement_node>(var->get_name(), false);
+            } else {
+                break;
+            }
+        }
+        return expr;
+    }
+
+} // namespace ent

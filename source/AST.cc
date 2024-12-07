@@ -2,6 +2,7 @@
 // Created by notbonzo on 11/23/24.
 //
 #include "AST.icc"
+#include <format>
 
 namespace ent::ast {
     base_node::~base_node() = default;
