@@ -13,7 +13,7 @@ namespace ent {
         std::string base_type;
         int pointer;
         bool is_struct;
-        std::vector<std::pair<std::string, std::string>> struct_values;
+        std::vector<std::pair<std::string, variable_type>> struct_values;
 
         [[nodiscard]] std::string to_string() const {
             std::ostringstream os;
@@ -23,7 +23,7 @@ namespace ent {
             if (is_struct && !struct_values.empty()) {
                 os << ", struct_values: {";
                 for (const auto& [name, type] : struct_values) {
-                    os << "{" << name << ": " << type << "}, ";
+                    os << "{" << name << ": " << type.to_string() << "}, ";
                 }
                 os.seekp(-2, std::ios_base::end);
                 os << "}";
@@ -150,7 +150,7 @@ namespace ent::ast {
             std::println("}}");
             print_end(indent);
         }
-    private:
+
         std::vector<base_node_ptr> m_elements;
     };
 
@@ -178,7 +178,7 @@ namespace ent::ast {
             print_end(indent);
         }
 
-    private:
+
         variable_type m_return_type;
         std::string m_name;
         std::vector<base_node_ptr> m_parameters;
@@ -212,7 +212,7 @@ namespace ent::ast {
             print_end(indent);
         }
 
-    private:
+
         variable_type m_return_type;
         std::string m_name;
         std::vector<base_node_ptr> m_parameters;
@@ -231,7 +231,7 @@ namespace ent::ast {
             print_end(indent);
         }
 
-    private:
+
         std::vector<base_node_ptr> m_statements;
     };
 
@@ -250,7 +250,7 @@ namespace ent::ast {
             std::println("-> type: {}", m_type.to_string());
             print_end(indent);
         }
-    private:
+
         variable_type m_type;
         std::string m_name;
     };
@@ -272,7 +272,7 @@ namespace ent::ast {
             m_rhs->print(indent + 4);
             print_end(indent);
         }
-    private:
+
         std::string m_name;
         variable_type m_type;
         base_node_ptr m_rhs;
@@ -291,7 +291,7 @@ namespace ent::ast {
             m_rhs->print(indent + 4);
             print_end(indent);
         }
-    private:
+
         std::string m_name;
         base_node_ptr m_rhs;
     };
@@ -307,7 +307,7 @@ namespace ent::ast {
             std::println("Parameter {} of type {}", m_name, m_type.to_string());
             print_end(indent);
         }
-    private:
+
         std::string m_name;
         variable_type m_type;
     };
@@ -326,7 +326,7 @@ namespace ent::ast {
             m_rhs->print(indent + 4);
             print_end(indent);
         }
-    private:
+
         base_node_ptr m_lhs;
         base_node_ptr m_rhs;
         EXPRESSION_NODE_OP m_op;
@@ -342,7 +342,7 @@ namespace ent::ast {
             m_child->print(indent + 4);
             print_end(indent);
         }
-    private:
+
         base_node_ptr m_child;
     };
 
@@ -361,7 +361,7 @@ namespace ent::ast {
             }
             print_end(indent);
         }
-    private:
+
         base_node_ptr m_value;
     };
 
@@ -399,7 +399,7 @@ namespace ent::ast {
             std::println("-> name: {}", m_name);
             print_end(indent);
         }
-    private:
+
         std::string m_name;
         bool m_prefix;
     };
@@ -416,7 +416,7 @@ namespace ent::ast {
             std::println("-> name: {}", m_name);
             print_end(indent);
         }
-    private:
+
         std::string m_name;
         bool m_prefix;
     };
@@ -444,7 +444,7 @@ namespace ent::ast {
             print_end(indent);
         }
 
-    private:
+
         std::string m_array_name;
         base_node_ptr m_index;
         base_node_ptr m_rhs;
@@ -473,7 +473,7 @@ namespace ent::ast {
         [[nodiscard]] const base_node_ptr& base() const { return m_base; }
         [[nodiscard]] const std::string_view member_name() const { return m_member_name; }
 
-    private:
+
         base_node_ptr m_base;
         std::string m_member_name;
     };
@@ -515,7 +515,7 @@ namespace ent::ast {
         [[nodiscard]] const base_node_ptr& base() const { return m_base; }
         [[nodiscard]] const std::vector<base_node_ptr>& arguments() const { return m_arguments; }
 
-    private:
+
         std::string m_callee_name;
         std::vector<base_node_ptr> m_arguments;
         base_node_ptr m_base;
@@ -550,7 +550,7 @@ namespace ent::ast {
         [[nodiscard]] const base_node_ptr& false_body() const { return m_false_body; }
         void set_false_body(base_node_ptr fb) { m_false_body = std::move(fb); }
 
-    private:
+
         base_node_ptr m_condition;
         base_node_ptr m_true_body;
         base_node_ptr m_false_body;
@@ -578,7 +578,7 @@ namespace ent::ast {
         [[nodiscard]] const base_node_ptr& condition() const { return m_condition; }
         [[nodiscard]] const base_node_ptr& body() const { return m_body; }
 
-    private:
+
         base_node_ptr m_condition;
         base_node_ptr m_body;
     };
@@ -617,7 +617,7 @@ namespace ent::ast {
         [[nodiscard]] const std::vector<base_node_ptr>& cases() const { return m_cases; }
         [[nodiscard]] const base_node_ptr& default_case() const { return m_default_case; }
 
-    private:
+
         base_node_ptr m_expression;
         std::vector<base_node_ptr> m_cases;
         base_node_ptr m_default_case;
@@ -645,7 +645,7 @@ namespace ent::ast {
         [[nodiscard]] const base_node_ptr& value() const { return m_value; }
         [[nodiscard]] const base_node_ptr& body() const { return m_body; }
 
-    private:
+
         base_node_ptr m_value;
         base_node_ptr m_body;
     };
@@ -677,7 +677,7 @@ namespace ent::ast {
         [[nodiscard]] const std::string_view name() const { return m_name; }
         [[nodiscard]] const std::vector<base_node_ptr>& arguments() const { return m_arguments; }
 
-    private:
+
         std::string m_name;
         std::vector<base_node_ptr> m_arguments;
     };
@@ -696,7 +696,7 @@ namespace ent::ast {
             return m_name;
         }
 
-    private:
+
         std::string m_name;
     };
 
@@ -713,7 +713,7 @@ namespace ent::ast {
             m_index->print(indent + 4);
             print_end(indent);
         }
-    private:
+
         std::string m_name;
         base_node_ptr m_index;
     };
@@ -732,7 +732,7 @@ namespace ent::ast {
 
         [[nodiscard]] const std::string_view value() const { return m_value; }
 
-    private:
+
         std::string m_value;
     };
 
@@ -761,7 +761,7 @@ namespace ent::ast {
             }
         }
 
-    private:
+
         std::string m_value;
         LITERAL_TYPE m_type;
     };
@@ -793,7 +793,7 @@ namespace ent::ast {
             }
         }
 
-    private:
+
         lexer::token::TOKEN_TYPE m_op;
         base_node_ptr m_operand;
     };
@@ -826,7 +826,7 @@ namespace ent::ast {
             }
         }
 
-    private:
+
         base_node_ptr m_lhs;
         lexer::token::TOKEN_TYPE m_op;
         base_node_ptr m_rhs;

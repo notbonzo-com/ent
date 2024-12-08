@@ -6,22 +6,24 @@
 #include "Preprocessor.hh"
 
 void test_parser_with_file(const std::string& file_path) {
-        std::print("Parsing file: {}\n", file_path);
+    std::print("Parsing file: {}\n", file_path);
 
-        ent::preprocessor pp(file_path);
-        auto source = pp.get_preprocessed();
-        ent::lexer lexer(source);
-        const auto tokens = lexer.get_tokens();
-        ent::parser parser(tokens);
+    ent::preprocessor pp(file_path);
+    const auto source = pp.get_preprocessed();
+    ent::lexer lexer(source);
+    const auto tokens = lexer.get_tokens();
+    ent::parser parser(tokens);
 
-        if (const auto ast = parser.parse_program()) {
-            std::print("AST for {}:\n", file_path);
-            ast->print(0);
-        } else {
-            std::print("No AST generated for {}\n", file_path);
-        }
+    const auto ast = parser.parse_program();
+    if (ast) {
+        std::print("AST for {}:\n", file_path);
+        ast->print(0);
+    } else {
+        std::print("No AST generated for {}\n", file_path);
+    }
 
-        std::print("Parsing successful for file: {}\n", file_path);
+    std::print("Parsing successful for file: {}\n", file_path);
+
 }
 
 int main(const int argc, char* argv[]) {

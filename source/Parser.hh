@@ -1,5 +1,5 @@
-#ifndef ENT_PARSER_HH
-#define ENT_PARSER_HH
+#ifndef PARSER_HH
+#define PARSER_HH
 
 #include "Lexer.hh"
 #include "AST.icc"

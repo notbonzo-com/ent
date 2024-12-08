@@ -26,4 +26,5 @@
 - Preprocessor
   - Conditions
 - Parser+Codegen
-  - UFCS
+  - Add functionc chaing
+  - Arrays
