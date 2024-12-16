@@ -1,0 +1,8 @@
+build
+.cache
+entc
+compile_commands.json
+./build
+./.cache
+./entc
+./compile_commands.json
