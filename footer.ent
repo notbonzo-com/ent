@@ -1,0 +1,4 @@
+header {
+    define FOOTER_MESSAGE "Processing complete."
+    define FOOTER_VERSION 1.0
+}

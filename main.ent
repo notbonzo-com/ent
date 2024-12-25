@@ -1,0 +1,16 @@
+header {
+    include "constants.ent"
+    include "utils.ent"
+
+    define MAX_ITERATIONS 100
+    define WELCOME_MESSAGE "Hello, World!"
+
+    include "footer.ent"
+}
+
+define WELCOME_MSG "Hello World!\n"
+
+
+@if WELCOME_MSG != "Hello World!\n"
+
+@endif
