@@ -8,9 +8,16 @@ header {
     include "footer.ent"
 }
 
-define WELCOME_MSG "Hello World!\n"
+define STR "HAHAA"
 
+@if STR == "HAHAA"
+define WELCOME_IS_HAHAA 1
+@elif STR == "HAHA"
+define WELCOME_IS_HELLO 1
+@else
+define WELCOME_ISNT_EITHER 1
+@endif
 
-@if WELCOME_MSG != "Hello World!\n"
+@ifdef 0
 
 @endif
