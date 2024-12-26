@@ -9,13 +9,14 @@ header {
 }
 
 define STR "HAHAA"
+define STR 0
 
 @if STR == "HAHAA"
-define WELCOME_IS_HAHAA 1
+define STR_IS_HAHAA 1
 @elif STR == "HAHA"
-define WELCOME_IS_HELLO 1
+define STR_IS_HAHA 1
 @else
-define WELCOME_ISNT_EITHER 1
+define STR_ISNT_EITHER 1
 @endif
 
 @ifdef 0

@@ -8,6 +8,7 @@
 #include <regex.h>
 #include <assert.h>
 #include <stdarg.h>
+#include <ctype.h>
 
 #if __has_feature(cxx_constexpr)
     constexpr char HEADER_REGEX[] = "^\\s*header\\s*\\{";
@@ -42,6 +43,23 @@ static void merge_defines(struct preprocessor *dest, const struct preprocessor *
 
 static void append_string(char **dest, const char *src);
 static int count_braces(const char *line);
+
+/* --------------------------------------------------------------------------
+ * Helper functions
+ * -------------------------------------------------------------------------- */
+
+static void trim_leading_whitespace(char *str)
+{
+    if (!str) return;
+    char *p = str;
+    while (*p && isspace((unsigned char)*p)) {
+        p++;
+    }
+    if (p != str) {
+        size_t len = strlen(p);
+        memmove(str, p, len + 1);
+    }
+}
 
 /* --------------------------------------------------------------------------
  * Conditional stack management
@@ -380,6 +398,8 @@ static void process_line(struct preprocessor *pp,
                          regex_t *define_regex,
                          regex_t *include_regex)
 {
+    pp->current_column = 1;
+    
     /* If we're in a header block, defer to the header-based function */
     if (pp->in_header_block) {
         process_line_in_header(pp, line, header_start_regex, define_regex, include_regex);
@@ -502,9 +522,12 @@ static void handle_include(struct preprocessor *pp,
 {
     regmatch_t matches[2];
     if (regexec(include_regex, line, 2, matches, 0) != 0) {
+        pp->current_column = 1; /* TODO Point exactly to the thing that failed */
         error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
         fatal_error(&ctx, "Bad include syntax: '%s'", line);
     }
+
+    pp->current_column = (int)(matches[0].rm_so + 1);
 
     regoff_t start = matches[1].rm_so;
     regoff_t end   = matches[1].rm_eo;
@@ -597,9 +620,12 @@ static void handle_define(struct preprocessor *pp,
     /* capturing group #1 => name, group #2 => value */
     int ret = regexec(define_regex, line, 3, matches, 0);
     if (ret != 0) {
+        pp->current_column = 1; /* TODO Point exactly to the thing that failed */
         error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
         fatal_error(&ctx, "Malformed define statement: '%s'", line);
     }
+
+    pp->current_column = (int)(matches[0].rm_so + 1);
 
     regoff_t start_name  = matches[1].rm_so;
     regoff_t end_name    = matches[1].rm_eo;
@@ -609,9 +635,16 @@ static void handle_define(struct preprocessor *pp,
     size_t name_len  = (size_t)(end_name   - start_name);
     size_t value_len = (size_t)(end_value  - start_value);
 
-    if (name_len == 0 || value_len == 0) {
+    /* never happens because of regex, maybe we can fix it later? TODO */
+    /*if (name_len == 0) {
+        pp->current_column = (int)(matches[1].rm_so);
         error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
-        fatal_error(&ctx, "Missing name or value in define: '%s'", line);
+        fatal_error(&ctx, "Missing name in define: '%s'", line);
+    }*/
+    if (value_len == 0) {
+        pp->current_column = (int)(matches[2].rm_so);
+        error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+        fatal_error(&ctx, "Missing value in define: '%s'", line);
     }
 
     char *name  = calloc(name_len + 1,  sizeof(char));
@@ -619,8 +652,17 @@ static void handle_define(struct preprocessor *pp,
     strncpy(name,  &line[start_name],  name_len);
     strncpy(value, &line[start_value], value_len);
 
+    for (size_t i = 0; i < pp->define_count; i++) {
+        if (strcmp(pp->defines[i].name, name) == 0) {
+            pp->current_column = (int)(matches[1].rm_so + 1);
+            error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+            fatal_error(&ctx, "Macro '%s' is already defined", name);
+        }
+    }
+
     pp->defines = realloc(pp->defines, sizeof(struct preprocessor_define) * (pp->define_count + 1));
     if (!pp->defines) { /* Wrong check, TODO fix */
+        pp->current_column = (int)(matches[0].rm_so + 1);
         error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
         fatal_error(&ctx, "Out of memory while storing define");
     }
@@ -628,7 +670,6 @@ static void handle_define(struct preprocessor *pp,
     pp->defines[pp->define_count].value = value;
     pp->define_count++;
 }
-
 
 static void merge_defines(struct preprocessor *dest, const struct preprocessor *src)
 {
@@ -638,6 +679,7 @@ static void merge_defines(struct preprocessor *dest, const struct preprocessor *
 
         for (size_t j = 0; j < dest->define_count; j++) {
             if (strcmp(dest->defines[j].name, sub_name) == 0) {
+                dest->current_column = strlen(sub_name);
                 error_context_t ctx = make_error_context(dest, __FILE__, __LINE__);
                 fatal_error(&ctx, "Symbol '%s' already defined.", sub_name);
                 __builtin_unreachable();
@@ -730,6 +772,8 @@ static ssize_t _getline(char **lineptr, size_t *n, FILE *stream)
 
     *lineptr = buf;
     *n       = size;
+
+    trim_leading_whitespace(*lineptr);
 
     return (ssize_t)pos;
 }
