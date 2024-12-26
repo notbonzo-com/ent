@@ -11,7 +11,7 @@ static void print_error_header(const error_context_t *ctx, const char *level_col
         fprintf(stderr, "[module: %s] ", ctx->module);
     }
     if (ctx->file) {
-        fprintf(stderr, "[file: %s, line: %d, column: %d] ", ctx->file, ctx->line, ctx->column);
+        fprintf(stderr, "[%s:%d:%d] ", ctx->file, ctx->line, ctx->column);
     }
     fprintf(stderr, "\n");
 

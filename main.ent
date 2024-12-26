@@ -9,7 +9,6 @@ header {
 }
 
 define STR "HAHAA"
-define STR 0
 
 @if STR == "HAHAA"
 define STR_IS_HAHAA 1

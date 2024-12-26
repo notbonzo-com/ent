@@ -1,4 +1,5 @@
 #include <preprocessor.h>
+#include <lexer.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -10,36 +11,26 @@ int main(int argc, char *argv[]) {
 
     const char *filename = argv[1];
 
-    printf("Processing file: %s\n", filename);
-
     struct preprocessor pp = preprocessor_create(filename);
-
-    if (pp.preprocessed_file) {
-        printf("\n--- Preprocessed File ---\n%s\n", pp.preprocessed_file);
-    } else {
-        printf("\n--- No output generated. Check for errors. ---\n");
+    if (!pp.preprocessed_file) {
+        fprintf(stderr, "Preprocessing failed.\n");
+        return EXIT_FAILURE;
     }
 
-    if (pp.include_count > 0) {
-        printf("\n--- Included Files ---\n");
-        for (size_t i = 0; i < pp.include_count; i++) {
-            printf("%s\n", pp.includes[i]);
-        }
-    } else {
-        printf("\n--- No includes found. ---\n");
+    printf("--- Preprocessed Output ---\n%s\n", pp.preprocessed_file);
+
+    struct lexer lex;
+    lexer_init(&lex, pp.preprocessed_file, filename);
+
+    printf("--- Tokens ---\n");
+    for (size_t i = 0; i < lex.tokens.size; i++) {
+        token_t *token = &lex.tokens.data[i];
+        printf("[%zu:%zu] %d: %.*s\n", token->line, token->column, token->type, (int)token->length, token->lexeme);
     }
 
-    if (pp.define_count > 0) {
-        printf("\n--- Defined Constants ---\n");
-        for (size_t i = 0; i < pp.define_count; i++) {
-            printf("%s = %s\n", pp.defines[i].name, pp.defines[i].value);
-        }
-    } else {
-        printf("\n--- No defines found. ---\n");
-    }
-
+    lexer_destroy(&lex);
     preprocessor_destroy(&pp);
 
-    printf("\nProcessing complete.\n");
+    printf("Processing complete.\n");
     return EXIT_SUCCESS;
 }
