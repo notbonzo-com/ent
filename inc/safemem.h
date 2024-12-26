@@ -1,7 +1,7 @@
 #ifndef SAFEMEM_H
 #define SAFEMEM_H
 
-#define safe_free(obj) \
+#define SAFE_FREE(obj) \
   do {                 \
     if (obj) {         \
       free(obj);       \

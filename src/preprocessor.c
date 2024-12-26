@@ -327,7 +327,7 @@ struct preprocessor preprocessor_create(const char *filename)
         }
 
         /* Keep the raw line in pp->line for error messages */
-        safe_free(pp.line);
+        SAFE_FREE(pp.line);
         pp.line = strdup(linebuf);
 
         process_line(&pp, linebuf, &header_start_regex, &define_regex, &include_regex);
@@ -345,7 +345,7 @@ struct preprocessor preprocessor_create(const char *filename)
     regfree(&header_start_regex);
     regfree(&define_regex);
     regfree(&include_regex);
-    safe_free(linebuf);
+    SAFE_FREE(linebuf);
 
     fclose(pp.file);
     pp.file = nullptr;
@@ -362,33 +362,33 @@ void preprocessor_destroy(struct preprocessor *pp)
         pp->file = nullptr;
     }
 
-    safe_free(pp->preprocessed_file);
+    SAFE_FREE(pp->preprocessed_file);
     pp->preprocessed_file = nullptr;
 
-    safe_free(pp->header_content);
+    SAFE_FREE(pp->header_content);
     pp->header_content = nullptr;
 
-    safe_free(pp->line);
+    SAFE_FREE(pp->line);
     pp->line = nullptr;
 
     if (pp->includes) {
         for (size_t i = 0; i < pp->include_count; i++) {
-            safe_free(pp->includes[i]);
+            SAFE_FREE(pp->includes[i]);
         }
-        safe_free(pp->includes);
+        SAFE_FREE(pp->includes);
         pp->includes = nullptr;
     }
 
     if (pp->defines) {
         for (size_t i = 0; i < pp->define_count; i++) {
-            safe_free(pp->defines[i].name);
-            safe_free(pp->defines[i].value);
+            SAFE_FREE(pp->defines[i].name);
+            SAFE_FREE(pp->defines[i].value);
         }
-        safe_free(pp->defines);
+        SAFE_FREE(pp->defines);
         pp->defines = nullptr;
     }
 
-    safe_free(pp->conditional_stack);
+    SAFE_FREE(pp->conditional_stack);
     pp->conditional_stack = nullptr;
 }
 
@@ -503,7 +503,7 @@ static void process_line_in_header(struct preprocessor *pp,
             /* Also add it to the final preprocessed output */
             append_string(&pp->preprocessed_file, processed_line);
             append_string(&pp->preprocessed_file, "\n");
-            safe_free(processed_line);
+            SAFE_FREE(processed_line);
         }
         pp->in_header_block = false;
     } 
@@ -567,7 +567,7 @@ static void handle_header_start(struct preprocessor *pp, const char *line)
 {
     pp->in_header_block = true;
 
-    safe_free(pp->header_content);
+    SAFE_FREE(pp->header_content);
     pp->header_content = nullptr;
 
     pp->brace_balance = 0;
@@ -598,7 +598,7 @@ static void handle_header_start(struct preprocessor *pp, const char *line)
 
                 append_string(&pp->preprocessed_file, content);
                 append_string(&pp->preprocessed_file, "\n");
-                safe_free(content);
+                SAFE_FREE(content);
             }
         }
         pp->in_header_block = false;
@@ -719,7 +719,7 @@ static void append_string(char **dest, const char *src)
         size_t src_len = strlen(src);
         char  *temp    = realloc(*dest, old_len + src_len + 1);
         if (!temp) {
-            safe_free(*dest);
+            SAFE_FREE(*dest);
             *dest = nullptr;
             return;
         }
@@ -753,7 +753,7 @@ static ssize_t _getline(char **lineptr, size_t *n, FILE *stream)
             size_t new_size = size * 2;
             char *temp = realloc(buf, new_size);
             if (!temp) {
-                safe_free(buf);
+                SAFE_FREE(buf);
                 return -1;
             }
             buf  = temp;
@@ -764,7 +764,7 @@ static ssize_t _getline(char **lineptr, size_t *n, FILE *stream)
     }
 
     if (pos == 0 && c == EOF) {
-        safe_free(buf);
+        SAFE_FREE(buf);
         *lineptr = nullptr;
         return -1;
     }
