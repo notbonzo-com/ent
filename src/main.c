@@ -17,18 +17,12 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    printf("--- Preprocessed Output ---\n%s\n", pp.preprocessed_file);
-
-    struct lexer lex;
-    lexer_init(&lex, pp.preprocessed_file, filename);
-
     printf("--- Tokens ---\n");
-    for (size_t i = 0; i < lex.tokens.size; i++) {
-        token_t *token = &lex.tokens.data[i];
+    for (size_t i = 0; i < pp.tokens.size; i++) {
+        token_t *token = &pp.tokens.data[i];
         printf("[%zu:%zu] %d: %.*s\n", token->line, token->column, token->type, (int)token->length, token->lexeme);
     }
 
-    lexer_destroy(&lex);
     preprocessor_destroy(&pp);
 
     printf("Processing complete.\n");

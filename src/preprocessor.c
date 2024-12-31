@@ -1,3 +1,4 @@
+#include "lexer.h"
 #include <preprocessor.h>
 #include <error.h>
 #include <safemem.h>
@@ -299,6 +300,7 @@ struct preprocessor preprocessor_create(const char *filename)
     pp.brace_balance   = 0;
     pp.current_line    = 0;
     pp.current_column  = 0;
+    token_t_vector_init(&pp.tokens);
 
     pp.file = fopen(filename, "r");
     if (!pp.file) {
@@ -349,6 +351,11 @@ struct preprocessor preprocessor_create(const char *filename)
 
     fclose(pp.file);
     pp.file = nullptr;
+
+    struct lexer lex;
+    lexer_init(&lex, pp.preprocessed_file, pp.filename);
+    lexer_add_tokens_to_vector(&pp.tokens, &lex.tokens);
+    lexer_destroy(&lex);
 
     return pp;
 }
@@ -556,9 +563,10 @@ static void handle_include(struct preprocessor *pp,
     struct preprocessor sub = preprocessor_create(include_path);
     merge_defines(pp, &sub);
 
-    if (sub.header_content) {
-        append_string(&pp->preprocessed_file, sub.header_content);
-    }
+    struct lexer sub_lexer;
+    lexer_init(&sub_lexer, sub.header_content, sub.filename);
+    lexer_add_tokens_to_vector(&pp->tokens, &sub_lexer.tokens);
+    lexer_destroy(&sub_lexer);
 
     preprocessor_destroy(&sub);
 }

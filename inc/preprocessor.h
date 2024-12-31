@@ -6,6 +6,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include <lexer.h>
+
 struct preprocessor_define {
     char *name;
     char *value;
@@ -34,6 +36,8 @@ struct preprocessor {
     int  brace_balance;
     size_t current_line;
     size_t current_column;
+
+    token_t_vector_t tokens;
 };
 
 #ifdef __cplusplus
