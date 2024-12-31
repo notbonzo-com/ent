@@ -90,4 +90,12 @@ struct lexer {
 void lexer_init(struct lexer *lexer, const char *source, const char* filename);
 void lexer_destroy(struct lexer *lexer);
 
+/**
+ * @brief Function appends the argument of tokens to the origin vector
+ * 
+ * @param origin has to be non-volatile tokens get appended here
+ * @param tokens can be free'd after use, tokens are copied from here
+ */
+void lexer_add_tokens_to_vector(token_t_vector_t* origin, token_t_vector_t* tokens);
+
 #endif /* LEXER_H */

@@ -482,3 +482,11 @@ void lexer_destroy(struct lexer *lexer) {
     }
     token_t_vector_destroy(&lexer->tokens);
 }
+
+void lexer_add_tokens_to_vector(token_t_vector_t* origin, token_t_vector_t* tokens)
+{
+    for (size_t i = 0; i < token_t_vector_size(tokens); i++) {
+        token_t *token = token_t_vector_at(tokens, i);
+        token_t_vector_push_back(origin, *token); // i really hope that this copies the token
+    }
+}
