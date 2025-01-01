@@ -1,4 +1,4 @@
 header {
     fn square(single a) -> double;
-`
+
 }

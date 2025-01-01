@@ -295,7 +295,7 @@ static bool handle_conditional_directive(struct preprocessor *pp, const char *li
  * Preprocessor API interface
  * -------------------------------------------------------------------------- */
 
-struct preprocessor preprocessor_create(const char *filename)
+struct preprocessor preprocessor_create(const char *filename, bool disable_lexer)
 {
     struct preprocessor pp = {nullptr};
 
@@ -356,10 +356,16 @@ struct preprocessor preprocessor_create(const char *filename)
     fclose(pp.file);
     pp.file = nullptr;
 
-    struct lexer lex;
-    lexer_init(&lex, pp.preprocessed_file, pp.filename);
-    lexer_add_tokens_to_vector(&pp.tokens, &lex.tokens);
-    lexer_destroy(&lex);
+    if (!disable_lexer) {
+        struct lexer lex;
+        lexer_init(&lex, pp.preprocessed_file, pp.filename);
+        lexer_add_tokens_to_vector(&pp.tokens, &lex.tokens);
+        lexer_destroy(&lex);
+    }
+
+#ifdef DEBUG
+    printf("\n\n------- %s -------\n%s\n---------------\n\n", pp.filename, pp.preprocessed_file);
+#endif
 
     return pp;
 }
@@ -570,7 +576,7 @@ static void handle_include(struct preprocessor *pp,
     pp->includes[pp->include_count] = include_path;
     pp->include_count++;
 
-    struct preprocessor sub = preprocessor_create(include_path);
+    struct preprocessor sub = preprocessor_create(include_path, true);
     merge_defines(pp, &sub);
 
 #ifdef DEBUG

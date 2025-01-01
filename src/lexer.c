@@ -455,8 +455,9 @@ static void lexer_scan_all(struct lexer *lexer)
         }
     }
 
-    lexer_add_token(lexer, TOKEN_EOF, &lexer->source[lexer->position],
-                    0, lexer->line, lexer->column);
+    /* lexer_add_token(lexer, TOKEN_EOF, &lexer->source[lexer->position],
+                    0, lexer->line, lexer->column); */
+    /* what if we just dont do this :) */
 }
 
 void lexer_init(struct lexer *lexer, const char *source, const char* filename)

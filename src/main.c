@@ -11,7 +11,7 @@ int main(int argc, char *argv[]) {
 
     const char *filename = argv[1];
 
-    struct preprocessor pp = preprocessor_create(filename);
+    struct preprocessor pp = preprocessor_create(filename, false);
     if (!pp.preprocessed_file) {
         fprintf(stderr, "Preprocessing failed.\n");
         return EXIT_FAILURE;

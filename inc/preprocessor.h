@@ -44,7 +44,7 @@ struct preprocessor {
 extern "C" {
 #endif
 
-struct preprocessor preprocessor_create(const char *filename);
+struct preprocessor preprocessor_create(const char *filename, bool disable_lexer);
 void preprocessor_destroy(struct preprocessor *preprocessor);
 
 #ifdef __cplusplus
