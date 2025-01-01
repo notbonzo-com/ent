@@ -8,7 +8,6 @@
 #include <string.h>
 #include <regex.h>
 #include <assert.h>
-#include <stdarg.h>
 #include <ctype.h>
 
 #if __has_feature(cxx_constexpr)
@@ -21,7 +20,7 @@
     #define INCLUDE_REGEX "^\\s*include\\s*[\"<](.*)[\">]\\s*"
 #endif
 
-#define REGCHECK_OR_FATAL(_pp, _regex_ptr, _pattern, _cflags)                            \
+#define REGEX_CHECK_OR_FATAL(_pp, _regex_ptr, _pattern, _cflags)                         \
     do {                                                                                 \
         int __ret = regcomp((_regex_ptr), (_pattern), (_cflags));                        \
         if (__ret) {                                                                     \
@@ -33,11 +32,11 @@
     } while (0)
 
 
-static ssize_t _getline(char **lineptr, size_t *n, FILE *stream);
+static ssize_t get_line(char **line_ptr, size_t *n, FILE *stream);
 static error_context_t make_error_context(const struct preprocessor *pp, const char *file, int line);
-static void process_line(struct preprocessor *pp, const char *line, regex_t *header_start_regex, regex_t *define_regex, regex_t *include_regex);
-static void process_line_in_header(struct preprocessor *pp, const char *line, regex_t *header_start_regex, regex_t *define_regex, regex_t *include_regex);
-static void handle_include(struct preprocessor *pp, const char *line, regex_t *include_regex);
+static void process_line(struct preprocessor *pp, const char *line, const regex_t *header_start_regex, regex_t *define_regex, const regex_t *include_regex);
+static void process_line_in_header(struct preprocessor *pp, const char *line, const regex_t *header_start_regex, regex_t *define_regex, const regex_t *include_regex);
+static void handle_include(struct preprocessor *pp, const char *line, const regex_t *include_regex);
 static void handle_header_start(struct preprocessor *pp, const char *line);
 static void handle_define(struct preprocessor *pp, const char *line, regex_t *define_regex);
 static void merge_defines(struct preprocessor *dest, const struct preprocessor *src);
@@ -52,12 +51,12 @@ static int count_braces(const char *line);
 static void trim_leading_whitespace(char *str)
 {
     if (!str) return;
-    char *p = str;
+    const char *p = str;
     while (*p && isspace((unsigned char)*p)) {
         p++;
     }
     if (p != str) {
-        size_t len = strlen(p);
+        const size_t len = strlen(p);
         memmove(str, p, len + 1);
     }
 }
@@ -66,7 +65,7 @@ static void trim_leading_whitespace(char *str)
  * Conditional stack management
  * -------------------------------------------------------------------------- */
 
-static void conditional_stack_push(struct preprocessor *pp, bool in_true_block) {
+static void conditional_stack_push(struct preprocessor *pp, const bool in_true_block) {
     if (pp->conditional_stack_size == pp->conditional_stack_capacity) {
         pp->conditional_stack_capacity = pp->conditional_stack_capacity
                                          ? pp->conditional_stack_capacity * 2
@@ -76,7 +75,7 @@ static void conditional_stack_push(struct preprocessor *pp, bool in_true_block) 
             sizeof(struct preprocessor_conditional_state) * pp->conditional_stack_capacity
         );
         if (!pp->conditional_stack) {
-            error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+            const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
             fatal_error(&ctx, "Out of memory expanding conditional stack");
         }
     }
@@ -89,13 +88,13 @@ static void conditional_stack_push(struct preprocessor *pp, bool in_true_block) 
 
 static void conditional_stack_pop(struct preprocessor *pp) {
     if (pp->conditional_stack_size == 0) {
-        error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+        const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
         fatal_error(&ctx, "Mismatched @endif encountered");
     }
     pp->conditional_stack_size--;
 }
 
-static struct preprocessor_conditional_state *conditional_stack_top(struct preprocessor *pp) {
+static struct preprocessor_conditional_state *conditional_stack_top(const struct preprocessor *pp) {
     if (pp->conditional_stack_size == 0) return nullptr;
     return &pp->conditional_stack[pp->conditional_stack_size - 1];
 }
@@ -105,15 +104,15 @@ static struct preprocessor_conditional_state *conditional_stack_top(struct prepr
  * Condition evaluation
  * -------------------------------------------------------------------------- */
 
-static bool evaluate_condition(struct preprocessor *pp, const char *condition)
+static bool evaluate_condition(const struct preprocessor *pp, const char *condition)
 {
     char symbol[256] = {0};
     char operator_str[4] = {0};
     char operand[256] = {0};
 
-    int parsed = sscanf(condition, "%255s %3s %255s", symbol, operator_str, operand);
+    const int parsed = sscanf(condition, "%255s %3s %255s", symbol, operator_str, operand);
     if (parsed != 3) { /* TODO: Add columns to point to the part where the parsing failed. */
-        error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+        const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
         fatal_error(&ctx, "Malformed condition: '%s'. Expected format: SYMBOL <op> VALUE", condition);
     }
 
@@ -144,48 +143,54 @@ static bool evaluate_condition(struct preprocessor *pp, const char *condition)
     }
 
     if (both_numeric) {
-        long val_def  = strtol(defined_value, nullptr, 10);
-        long val_cond = strtol(operand,       nullptr, 10);
+        const long val_def  = strtol(defined_value, nullptr, 10);
+        const long val_cond = strtol(operand,       nullptr, 10);
 
         if (strcmp(operator_str, "==") == 0) {
-            return (val_def == val_cond);
-        } else if (strcmp(operator_str, "!=") == 0) {
-            return (val_def != val_cond);
-        } else if (strcmp(operator_str, ">") == 0) {
-            return (val_def > val_cond);
-        } else if (strcmp(operator_str, ">=") == 0) {
-            return (val_def >= val_cond);
-        } else if (strcmp(operator_str, "<") == 0) {
-            return (val_def < val_cond);
-        } else if (strcmp(operator_str, "<=") == 0) {
-            return (val_def <= val_cond);
-        } else {
-            error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
-            fatal_error(&ctx, "Unsupported operator: '%s'", operator_str);
-            __builtin_unreachable();
+            return val_def == val_cond;
         }
-    } 
-    else {
-        int cmp = strcmp(defined_value, operand);
-
-        if (strcmp(operator_str, "==") == 0) {
-            return (cmp == 0);
-        } else if (strcmp(operator_str, "!=") == 0) {
-            return (cmp != 0);
-        } else if (strcmp(operator_str, ">") == 0) {
-            return (cmp > 0);
-        } else if (strcmp(operator_str, ">=") == 0) {
-            return (cmp >= 0);
-        } else if (strcmp(operator_str, "<") == 0) {
-            return (cmp < 0);
-        } else if (strcmp(operator_str, "<=") == 0) {
-            return (cmp <= 0);
-        } else {
-            error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
-            fatal_error(&ctx, "Unsupported operator: '%s' for string comparison", operator_str);
-            __builtin_unreachable();
+        if (strcmp(operator_str, "!=") == 0) {
+            return val_def != val_cond;
         }
+        if (strcmp(operator_str, ">") == 0) {
+            return val_def > val_cond;
+        }
+        if (strcmp(operator_str, ">=") == 0) {
+            return val_def >= val_cond;
+        }
+        if (strcmp(operator_str, "<") == 0) {
+            return val_def < val_cond;
+        }
+        if (strcmp(operator_str, "<=") == 0) {
+            return val_def <= val_cond;
+        }
+        const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+        fatal_error(&ctx, "Unsupported operator: '%s'", operator_str);
+        __builtin_unreachable();
     }
+    const int cmp = strcmp(defined_value, operand);
+
+    if (strcmp(operator_str, "==") == 0) {
+        return cmp == 0;
+    }
+    if (strcmp(operator_str, "!=") == 0) {
+        return cmp != 0;
+    }
+    if (strcmp(operator_str, ">") == 0) {
+        return cmp > 0;
+    }
+    if (strcmp(operator_str, ">=") == 0) {
+        return cmp >= 0;
+    }
+    if (strcmp(operator_str, "<") == 0) {
+        return cmp < 0;
+    }
+    if (strcmp(operator_str, "<=") == 0) {
+        return cmp <= 0;
+    }
+    const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+    fatal_error(&ctx, "Unsupported operator: '%s' for string comparison", operator_str);
+    __builtin_unreachable();
 }
 
 /* Can add more conditionals later */
@@ -221,7 +226,7 @@ static bool handle_conditional_directive(struct preprocessor *pp, const char *li
         const char *condition = line + 3;
         while (*condition == ' ') condition++;
 
-        bool condition_result = evaluate_condition(pp, condition);
+        const bool condition_result = evaluate_condition(pp, condition);
 
         conditional_stack_push(pp, condition_result);
 
@@ -239,7 +244,7 @@ static bool handle_conditional_directive(struct preprocessor *pp, const char *li
 
         struct preprocessor_conditional_state *state = conditional_stack_top(pp);
         if (!state) {
-            error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+            const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
             fatal_error(&ctx, "Mismatched @elif encountered without a prior @if/@ifdef");
         }
 
@@ -247,7 +252,7 @@ static bool handle_conditional_directive(struct preprocessor *pp, const char *li
             /* A previous branch was already taken => skip this branch */
             state->in_true_block = false;
         } else {
-            bool condition_result = evaluate_condition(pp, condition);
+            const bool condition_result = evaluate_condition(pp, condition);
 
             state->in_true_block = condition_result;
             state->condition_met = condition_result;
@@ -260,7 +265,7 @@ static bool handle_conditional_directive(struct preprocessor *pp, const char *li
     {
         struct preprocessor_conditional_state *state = conditional_stack_top(pp);
         if (!state) {
-            error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+            const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
             fatal_error(&ctx, "Mismatched @else encountered without a prior @if/@ifdef");
         }
 
@@ -275,7 +280,7 @@ static bool handle_conditional_directive(struct preprocessor *pp, const char *li
         (line[6] == ' ' || line[6] == '\0' || line[6] == '\n' || line[6] == '\r'))
     {
         if (pp->conditional_stack_size == 0) {
-            error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+            const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
             fatal_error(&ctx, "Mismatched @endif encountered");
         }
         conditional_stack_pop(pp);
@@ -292,8 +297,7 @@ static bool handle_conditional_directive(struct preprocessor *pp, const char *li
 
 struct preprocessor preprocessor_create(const char *filename)
 {
-    struct preprocessor pp;
-    memset(&pp, 0, sizeof(pp));
+    struct preprocessor pp = {nullptr};
 
     pp.filename        = filename;
     pp.in_header_block = false;
@@ -312,15 +316,15 @@ struct preprocessor preprocessor_create(const char *filename)
     regex_t define_regex;
     regex_t include_regex;
 
-    REGCHECK_OR_FATAL(&pp, &header_start_regex, HEADER_REGEX,  REG_EXTENDED);
-    REGCHECK_OR_FATAL(&pp, &define_regex,       DEFINE_REGEX,  REG_EXTENDED | REG_NEWLINE);
-    REGCHECK_OR_FATAL(&pp, &include_regex,      INCLUDE_REGEX, REG_EXTENDED);
+    REGEX_CHECK_OR_FATAL(&pp, &header_start_regex, HEADER_REGEX,  REG_EXTENDED);
+    REGEX_CHECK_OR_FATAL(&pp, &define_regex,       DEFINE_REGEX,  REG_EXTENDED | REG_NEWLINE);
+    REGEX_CHECK_OR_FATAL(&pp, &include_regex,      INCLUDE_REGEX, REG_EXTENDED);
 
     char   *linebuf  = nullptr;
     size_t  bufsize  = 0;
     ssize_t linelen  = 0;
 
-    while ((linelen = _getline(&linebuf, &bufsize, pp.file)) != -1) {
+    while ((linelen = get_line(&linebuf, &bufsize, pp.file)) != -1) {
         pp.current_line++;
         pp.current_column = 1;
 
@@ -360,50 +364,56 @@ struct preprocessor preprocessor_create(const char *filename)
     return pp;
 }
 
-void preprocessor_destroy(struct preprocessor *pp)
+void preprocessor_destroy(struct preprocessor *preprocessor)
 {
-    if (!pp) return;
+    if (!preprocessor) return;
 
-    if (pp->file) {
-        fclose(pp->file);
-        pp->file = nullptr;
+    if (preprocessor->file) {
+        fclose(preprocessor->file);
+        preprocessor->file = nullptr;
     }
 
-    SAFE_FREE(pp->preprocessed_file);
-    pp->preprocessed_file = nullptr;
+    SAFE_FREE(preprocessor->preprocessed_file);
+    preprocessor->preprocessed_file = nullptr;
 
-    SAFE_FREE(pp->header_content);
-    pp->header_content = nullptr;
+    SAFE_FREE(preprocessor->header_content);
+    preprocessor->header_content = nullptr;
 
-    SAFE_FREE(pp->line);
-    pp->line = nullptr;
+    SAFE_FREE(preprocessor->line);
+    preprocessor->line = nullptr;
 
-    if (pp->includes) {
-        for (size_t i = 0; i < pp->include_count; i++) {
-            SAFE_FREE(pp->includes[i]);
+    if (preprocessor->includes) {
+        for (size_t i = 0; i < preprocessor->include_count; i++) {
+            SAFE_FREE(preprocessor->includes[i]);
         }
-        SAFE_FREE(pp->includes);
-        pp->includes = nullptr;
+        SAFE_FREE(preprocessor->includes);
+        preprocessor->includes = nullptr;
     }
 
-    if (pp->defines) {
-        for (size_t i = 0; i < pp->define_count; i++) {
-            SAFE_FREE(pp->defines[i].name);
-            SAFE_FREE(pp->defines[i].value);
+    if (preprocessor->defines) {
+        for (size_t i = 0; i < preprocessor->define_count; i++) {
+            SAFE_FREE(preprocessor->defines[i].name);
+            SAFE_FREE(preprocessor->defines[i].value);
         }
-        SAFE_FREE(pp->defines);
-        pp->defines = nullptr;
+        SAFE_FREE(preprocessor->defines);
+        preprocessor->defines = nullptr;
     }
 
-    SAFE_FREE(pp->conditional_stack);
-    pp->conditional_stack = nullptr;
+    SAFE_FREE(preprocessor->conditional_stack);
+    preprocessor->conditional_stack = nullptr;
+
+    for (size_t i = 0; i < token_t_vector_size(&preprocessor->tokens); i++) {
+        token_t *token = token_t_vector_at(&preprocessor->tokens, i);
+        SAFE_FREE(token->lexeme);
+    }
+    token_t_vector_destroy(&preprocessor->tokens);
 }
 
 static void process_line(struct preprocessor *pp,
                          const char *line,
-                         regex_t *header_start_regex,
+                         const regex_t *header_start_regex,
                          regex_t *define_regex,
-                         regex_t *include_regex)
+                         const regex_t *include_regex)
 {
     pp->current_column = 1;
     
@@ -419,7 +429,7 @@ static void process_line(struct preprocessor *pp,
     }
 
     /* 2) inactive block? */
-    struct preprocessor_conditional_state *state = conditional_stack_top(pp);
+    const struct preprocessor_conditional_state *state = conditional_stack_top(pp);
     if (state && !state->in_true_block) {
         return;
     }
@@ -445,9 +455,9 @@ static void process_line(struct preprocessor *pp,
 
 static void process_line_in_header(struct preprocessor *pp,
                                    const char *line,
-                                   regex_t *header_start_regex,
+                                   const regex_t *header_start_regex,
                                    regex_t *define_regex,
-                                   regex_t *include_regex)
+                                   const regex_t *include_regex)
 {
     /* conditional directive? */
     if (handle_conditional_directive(pp, line)) {
@@ -455,27 +465,27 @@ static void process_line_in_header(struct preprocessor *pp,
     }
 
     /* inactive block? */
-    struct preprocessor_conditional_state *state = conditional_stack_top(pp);
+    const struct preprocessor_conditional_state *state = conditional_stack_top(pp);
     if (state && !state->in_true_block) {
         return;
     }
 
     /* defines or includes inside header */
     if (regexec(header_start_regex, line, 0, nullptr, 0) == 0) {
-        error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+        const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
         fatal_error(&ctx, "Nested header block in '%s'", pp->filename);
         __builtin_unreachable();
     }
     if (regexec(define_regex, line, 0, nullptr, 0) == 0) {
         handle_define(pp, line, define_regex);
-        return; 
+        return;
     }
     if (regexec(include_regex, line, 0, nullptr, 0) == 0) {
         handle_include(pp, line, include_regex);
         return;
     }
 
-    int line_braces = count_braces(line);
+    const int line_braces = count_braces(line);
     pp->brace_balance += line_braces;
 
     if (pp->brace_balance <= 0) {
@@ -484,9 +494,9 @@ static void process_line_in_header(struct preprocessor *pp,
          * The line might have text preceding the '}' that still
          * belongs to the block, so let's capture that portion.
          */
-        int    local_balance = line_braces;
-        size_t search_pos    = 0;
-        size_t line_len      = strlen(line);
+        int    local_balance  = line_braces;
+        size_t search_pos     = 0;
+        const size_t line_len = strlen(line);
         char  *processed_line = nullptr;
 
         while (local_balance < 0 && search_pos < line_len) {
@@ -494,7 +504,7 @@ static void process_line_in_header(struct preprocessor *pp,
             if (!brace_ptr) break;
             local_balance++;
             if (local_balance == 0) {
-                size_t length = (size_t)(brace_ptr - line);
+                const size_t length = brace_ptr - line;
                 processed_line = calloc(length + 1, sizeof(char));
                 strncpy(processed_line, line, length);
                 break;
@@ -525,20 +535,20 @@ static void process_line_in_header(struct preprocessor *pp,
 
 static void handle_include(struct preprocessor *pp,
                            const char *line,
-                           regex_t *include_regex)
+                           const regex_t *include_regex)
 {
     regmatch_t matches[2];
     if (regexec(include_regex, line, 2, matches, 0) != 0) {
         pp->current_column = 1; /* TODO Point exactly to the thing that failed */
-        error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+        const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
         fatal_error(&ctx, "Bad include syntax: '%s'", line);
     }
 
-    pp->current_column = (int)(matches[0].rm_so + 1);
+    pp->current_column = matches[0].rm_so + 1;
 
-    regoff_t start = matches[1].rm_so;
-    regoff_t end   = matches[1].rm_eo;
-    size_t length  = (size_t)(end - start);
+    const regoff_t start = matches[1].rm_so;
+    const regoff_t end   = matches[1].rm_eo;
+    const size_t length  = end - start;
 
     char *include_path = calloc(length + 1, sizeof(char));
     strncpy(include_path, &line[start], length);
@@ -546,7 +556,7 @@ static void handle_include(struct preprocessor *pp,
     /* Check for include cycle */
     for (size_t i = 0; i < pp->include_count; i++) {
         if (strcmp(pp->includes[i], include_path) == 0) {
-            error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+            const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
             fatal_error(&ctx, "Cyclic include: '%s'", include_path);
         }
     }
@@ -554,7 +564,7 @@ static void handle_include(struct preprocessor *pp,
     /* Expand the includes array */
     pp->includes = realloc(pp->includes, sizeof(char*) * (pp->include_count + 1));
     if (!pp->includes) {
-        error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+        const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
         fatal_error(&ctx, "Out of memory while expanding includes array");
     }
     pp->includes[pp->include_count] = include_path;
@@ -562,6 +572,10 @@ static void handle_include(struct preprocessor *pp,
 
     struct preprocessor sub = preprocessor_create(include_path);
     merge_defines(pp, &sub);
+
+#ifdef DEBUG
+    printf("\n\n------- %s -------\n%s\n---------------\n\n", include_path, sub.header_content);
+#endif
 
     struct lexer sub_lexer;
     lexer_init(&sub_lexer, sub.header_content, sub.filename);
@@ -580,13 +594,13 @@ static void handle_header_start(struct preprocessor *pp, const char *line)
 
     pp->brace_balance = 0;
 
-    int line_braces = count_braces(line);
+    const int line_braces = count_braces(line);
     pp->brace_balance += line_braces;
 
     /* find the '{' */
     const char *brace_pos = strchr(line, '{');
     if (!brace_pos) {
-        error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+        const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
         fatal_error(&ctx, "Malformed header line, missing '{': '%s'", line);
     }
     const char *after_brace = brace_pos + 1;
@@ -596,7 +610,7 @@ static void handle_header_start(struct preprocessor *pp, const char *line)
         /* extract content between '{' and '}' */
         const char *closing_brace = strrchr(after_brace, '}');
         if (closing_brace) {
-            size_t content_len = (size_t)(closing_brace - after_brace);
+            const size_t content_len = (size_t)(closing_brace - after_brace);
             if (content_len > 0) {
                 char *content = calloc(content_len + 1, sizeof(char));
                 strncpy(content, after_brace, content_len);
@@ -626,22 +640,22 @@ static void handle_define(struct preprocessor *pp,
 {
     regmatch_t matches[3];
     /* capturing group #1 => name, group #2 => value */
-    int ret = regexec(define_regex, line, 3, matches, 0);
+    const int ret = regexec(define_regex, line, 3, matches, 0);
     if (ret != 0) {
         pp->current_column = 1; /* TODO Point exactly to the thing that failed */
         error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
         fatal_error(&ctx, "Malformed define statement: '%s'", line);
     }
 
-    pp->current_column = (int)(matches[0].rm_so + 1);
+    pp->current_column = matches[0].rm_so + 1;
 
-    regoff_t start_name  = matches[1].rm_so;
-    regoff_t end_name    = matches[1].rm_eo;
-    regoff_t start_value = matches[2].rm_so;
-    regoff_t end_value   = matches[2].rm_eo;
+    const regoff_t start_name  = matches[1].rm_so;
+    const regoff_t end_name    = matches[1].rm_eo;
+    const regoff_t start_value = matches[2].rm_so;
+    const regoff_t end_value   = matches[2].rm_eo;
 
-    size_t name_len  = (size_t)(end_name   - start_name);
-    size_t value_len = (size_t)(end_value  - start_value);
+    const size_t name_len  = end_name   - start_name;
+    const size_t value_len = end_value  - start_value;
 
     /* never happens because of regex, maybe we can fix it later? TODO */
     /*if (name_len == 0) {
@@ -650,8 +664,8 @@ static void handle_define(struct preprocessor *pp,
         fatal_error(&ctx, "Missing name in define: '%s'", line);
     }*/
     if (value_len == 0) {
-        pp->current_column = (int)(matches[2].rm_so);
-        error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+        pp->current_column = matches[2].rm_so;
+        const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
         fatal_error(&ctx, "Missing value in define: '%s'", line);
     }
 
@@ -662,16 +676,16 @@ static void handle_define(struct preprocessor *pp,
 
     for (size_t i = 0; i < pp->define_count; i++) {
         if (strcmp(pp->defines[i].name, name) == 0) {
-            pp->current_column = (int)(matches[1].rm_so + 1);
-            error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+            pp->current_column = matches[1].rm_so + 1;
+            const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
             fatal_error(&ctx, "Macro '%s' is already defined", name);
         }
     }
 
     pp->defines = realloc(pp->defines, sizeof(struct preprocessor_define) * (pp->define_count + 1));
     if (!pp->defines) { /* Wrong check, TODO fix */
-        pp->current_column = (int)(matches[0].rm_so + 1);
-        error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
+        pp->current_column = matches[0].rm_so + 1;
+        const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
         fatal_error(&ctx, "Out of memory while storing define");
     }
     pp->defines[pp->define_count].name  = name;
@@ -688,14 +702,14 @@ static void merge_defines(struct preprocessor *dest, const struct preprocessor *
         for (size_t j = 0; j < dest->define_count; j++) {
             if (strcmp(dest->defines[j].name, sub_name) == 0) {
                 dest->current_column = strlen(sub_name);
-                error_context_t ctx = make_error_context(dest, __FILE__, __LINE__);
+                const error_context_t ctx = make_error_context(dest, __FILE__, __LINE__);
                 fatal_error(&ctx, "Symbol '%s' already defined.", sub_name);
                 __builtin_unreachable();
             }
         }
 
-        size_t name_len  = strlen(sub_name);
-        size_t value_len = strlen(sub_value);
+        const size_t name_len  = strlen(sub_name);
+        const size_t value_len = strlen(sub_value);
 
         char *name_cpy  = calloc(name_len + 1, sizeof(char));
         char *value_cpy = calloc(value_len + 1, sizeof(char));
@@ -706,7 +720,7 @@ static void merge_defines(struct preprocessor *dest, const struct preprocessor *
         dest->defines = realloc(dest->defines,
                                 sizeof(struct preprocessor_define) * (dest->define_count + 1));
         if (!dest->defines) {
-            error_context_t ctx = make_error_context(dest, __FILE__, __LINE__);
+            const error_context_t ctx = make_error_context(dest, __FILE__, __LINE__);
             fatal_error(&ctx, "Out of memory while merging defines");
         }
         dest->defines[dest->define_count].name  = name_cpy;
@@ -719,12 +733,12 @@ static void append_string(char **dest, const char *src)
 {
     if (!src) return;
     if (!*dest) {
-        size_t len = strlen(src);
+        const size_t len = strlen(src);
         *dest = calloc(len + 1, sizeof(char));
         strcpy(*dest, src);
     } else {
-        size_t old_len = strlen(*dest);
-        size_t src_len = strlen(src);
+        const size_t old_len = strlen(*dest);
+        const size_t src_len = strlen(src);
         char  *temp    = realloc(*dest, old_len + src_len + 1);
         if (!temp) {
             SAFE_FREE(*dest);
@@ -732,7 +746,7 @@ static void append_string(char **dest, const char *src)
             return;
         }
         *dest = temp;
-        strcpy((*dest) + old_len, src);
+        strcpy(*dest + old_len, src);
     }
 }
 
@@ -746,19 +760,19 @@ static int count_braces(const char *line)
     return balance;
 }
 
-static ssize_t _getline(char **lineptr, size_t *n, FILE *stream)
+static ssize_t get_line(char **line_ptr, size_t *n, FILE *stream)
 {
-    if (!lineptr || !n || !stream) return -1;
+    if (!line_ptr || !n || !stream) return -1;
 
-    size_t size = (*n > 0) ? *n : 128;
-    char  *buf  = *lineptr ? *lineptr : malloc(size);
+    size_t size = *n > 0 ? *n : 128;
+    char  *buf  = *line_ptr ? *line_ptr : malloc(size);
     if (!buf) return -1;
 
     size_t pos = 0;
     int c;
     while ((c = fgetc(stream)) != EOF) {
         if (pos + 1 >= size) {
-            size_t new_size = size * 2;
+            const size_t new_size = size * 2;
             char *temp = realloc(buf, new_size);
             if (!temp) {
                 SAFE_FREE(buf);
@@ -773,15 +787,15 @@ static ssize_t _getline(char **lineptr, size_t *n, FILE *stream)
 
     if (pos == 0 && c == EOF) {
         SAFE_FREE(buf);
-        *lineptr = nullptr;
+        *line_ptr = nullptr;
         return -1;
     }
     buf[pos] = '\0';
 
-    *lineptr = buf;
+    *line_ptr = buf;
     *n       = size;
 
-    trim_leading_whitespace(*lineptr);
+    trim_leading_whitespace(*line_ptr);
 
     return (ssize_t)pos;
 }
@@ -792,10 +806,10 @@ static error_context_t make_error_context(const struct preprocessor *pp,
 {
     error_context_t ctx;
     ctx.module      = "preprocessor";
-    ctx.file        = (pp && pp->filename) ? pp->filename : "unknown";
-    ctx.source_line = (pp && pp->line) ? pp->line : nullptr;
-    ctx.line        = (int)((pp) ? pp->current_line : 0);
-    ctx.column      = (int)((pp) ? pp->current_column : 0);
+    ctx.file        = pp && pp->filename ? pp->filename : "unknown";
+    ctx.source_line = pp && pp->line ? pp->line : nullptr;
+    ctx.line        = (int)(pp ? pp->current_line : 0);
+    ctx.column      = (int)(pp ? pp->current_column : 0);
 
 #ifdef DEBUG
     printf(" --- Debug Info: file=%s, line=%d, column=%d ---\n", file, line, ctx.column);

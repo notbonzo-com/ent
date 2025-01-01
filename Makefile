@@ -2,9 +2,9 @@ CC = gcc
 AS = nasm
 LD = gcc
 
-CFLAGS = -std=c2x -Iinc -Wall -Wextra -Werror -pedantic
+CFLAGS = -std=c2x -Iinc -Wall -Wextra -Werror -pedantic -DDEBUG
 ASFLAGS = -f elf64
-LDFLAGS = -fsanitize=address
+LDFLAGS = #-fsanitize=address
 
 SRC_DIR = src
 BUILD_DIR = build

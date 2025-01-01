@@ -19,7 +19,7 @@ int main(int argc, char *argv[]) {
 
     printf("--- Tokens ---\n");
     for (size_t i = 0; i < pp.tokens.size; i++) {
-        token_t *token = &pp.tokens.data[i];
+        const token_t *token = &pp.tokens.data[i];
         printf("[%zu:%zu] %d: %.*s\n", token->line, token->column, token->type, (int)token->length, token->lexeme);
     }
 
