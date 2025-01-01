@@ -110,12 +110,12 @@ static error_context_t lexer_make_context(const struct lexer *lexer) {
 
 static bool is_alpha_or_underscore(const char c)
 {
-    return (isalpha((unsigned char)c) || c == '_');
+    return isalpha((unsigned char)c) || c == '_';
 }
 
 static bool is_alphanumeric_or_underscore(const char c)
 {
-    return (isalnum((unsigned char)c) || c == '_');
+    return isalnum((unsigned char)c) || c == '_';
 }
 
 static bool is_whitespace(char c)
@@ -194,7 +194,7 @@ static void lexer_scan_number(struct lexer *lexer)
                         length, start_line, start_col);
         return;
     }
-    else if (lexer_peek(lexer) == 'b' || lexer_peek(lexer) == 'B') {
+    if (lexer_peek(lexer) == 'b' || lexer_peek(lexer) == 'B') {
         lexer_advance(lexer); /* skip 'b'/'B' */
         while (lexer_peek(lexer) == '0' || lexer_peek(lexer) == '1') {
             lexer_advance(lexer);
@@ -283,17 +283,17 @@ static void lexer_skip_whitespace_and_comments(struct lexer *lexer) {
             }
             lexer_advance(lexer);
         }
-        else if (c == '/' && lexer_peek_next(lexer) == '/') {
+        else if (c == '/' && lexer_peek_offset(lexer, 1) == '/') {
             while (lexer_peek(lexer) != '\n' && !lexer_is_at_end(lexer)) {
                 lexer_advance(lexer);
             }
         }
-        else if (c == '/' && lexer_peek_next(lexer) == '*') {
+        else if (c == '/' && lexer_peek_offset(lexer, 1) == '*') {
             lexer_advance(lexer);
             lexer_advance(lexer);
             while (!lexer_is_at_end(lexer)) {
                 if (lexer_peek(lexer) == '*' &&
-                    lexer_peek_next(lexer) == '/') {
+                    lexer_peek_offset(lexer, 1) == '/') {
                     lexer_advance(lexer);
                     lexer_advance(lexer);
                     break;
