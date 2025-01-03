@@ -422,6 +422,7 @@ enum ast_builtin_type_kind {
     AST_BUILTIN_SQWORD,
     AST_BUILTIN_SINGLE,
     AST_BUILTIN_DOUBLE,
+    AST_BUILTIN_VAARGS,
 };
 
 struct ast_type_specifier {

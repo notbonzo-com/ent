@@ -1,60 +1,81 @@
-# Overview of the ent programmming language
+# Overview of the ent programming language
 
 This documentation provides an overview of `ent`, a *C-inspired low level programing language*, with several enhancements to both functionality and syntax to fit the needs of a system-level developer (me). The core conceptual similarities to languages like *C* will help developers transition and adapt this language more naturally. `ent` is a whitespace independent language.
 
 ## Table of contents
- 1. [Core Syntax](#core-syntax)
+1. [Core Syntax](#core-syntax)
     1. [Function Definitions](#function-definition)
     2. [Return Statement](#return-statement)
     3. [Global Variables](#core-global-variables)
     4. [Name Mangeling](#name-mangeling)
     5. [Calling Foreign Functions](#foreign-calls)
- 2. [Preprocessor](#preprocessor)
+
+2. [Preprocessor](#preprocessor)
     1. [Core Preprocessor Syntax](#core-preprocessor-syntax)
     2. [Defines and Constants](#defines-and-constants)
     3. [HB (Header Blocks) and Modular Includes](#header-blocks)
-    4. [Preprocessor conditions](#preprocessor-conditions)
+    4. [Preprocessor Conditions](#preprocessor-conditions)
     5. [File Embeding](#file-embeding)
- 3. [Variables](#variables)
+
+3. [Variables](#variables)
     1. [Global Variables](#global-variables)
-       1. [Definition](#global-variable-definitions)
-       2. [Definition with Default Value](#global-variable-definitions-with-initializer-value)
-       3. [Declaration of External Variable](#external-global-variables)
+        1. [Definition](#global-variable-definitions)
+        2. [Definition with Default Value](#global-variable-definitions-with-initializer-value)
+        3. [Declaration of External Variable](#external-global-variables)
     2. [Local Variables](#local-variables)
-    4. [Passing Variables into Functions](#passing-variables-into-functions)
-    5. [Function Return Values](#function-return-values)
- 4. [Control Flow](#control-flow)
+    3. [Passing Variables into Functions](#passing-variables-into-functions)
+        1. [Variadic Functions Vaargs](#variadic-functions-vaargs)
+    4. [Function Return Values](#function-return-values)
+
+4. [Control Flow](#control-flow)
     1. [If-Else Statements](#if-else-statements)
     2. [Switch Statements](#switch-statements)
-    4. [Loops](#loops)
-       1. [While Loops](#while-loops)
-       2. [For Loops](#for-loops)
-       3. [Times Loops](#times-loops)
-    5. [Calling Functions](#calling-functions)
- 5. [Pointers and Memory Management](#pointers)
+    3. [Loops](#loops)
+        1. [While Loops](#while-loops)
+        2. [For Loops](#for-loops)
+        3. [Times Loops](#times-loops)
+    4. [Calling Functions](#calling-functions)
+
+5. [Pointers and Memory Management](#pointers)
     1. [Declaring Pointers](#declaring-pointers)
     2. [Accessing Pointed-to Memory](#accessing-pointer-memory)
     3. [Modifying Pointers Destination](#modifying-pointers)
     4. [Pointer Arythmetic](#pointer-arythmetic)
     5. [Arrays](#arrays)
     6. [Type Casts](#type-cast)
- 6. [Structures](#structures)
+
+6. [Structures](#structures)
     1. [Declaration](#declaration)
         1. [Nested Declarations](#nested-declarations)
-    2. [Instantiation](#struct-instantiation)
-    3. [Passing into/from functions](#struct-passing-into-functions)
+    2. [Instantiation](#instantiation)
+    3. [Passing into/from Functions](#passing-intofrom-functions)
     4. [Pointers to Structs](#pointers-to-structs)
-    5. [Member Access](#struct-member-access)
+    5. [Member Access](#member-access)
     6. [Global Structs](#global-structs)
     7. [Struct Attributes](#struct-attributes)
- 7. [Uniform Function Call Syntax](#UFCS)
+    8. [Bit Fields](#bit-fields)
+
+7. [Uniform Function Call Syntax (UFCS)](#ufcs)
     1. [Core Syntax](#ufcs-core-syntax)
     2. [Unwraping the Syntactical Sugar](#unwraping-ufcs)
     3. [Chaining Function Calls](#chaining-ufcs-calls)
- 8. [Typedefs](#typedefs)
+
+8. [Typedefs](#typedefs)
     1. [Typedefing Base Types](#typedefing-base-types)
     2. [Typedefing Pointers](#typedefing-pointers)
     3. [Typedefing Structs](#typedefing-structs)
+
+9. [Unions](#unions)
+
+10. [Enums](#enums)
+    1. [Declaring Enums](#declaring-enums)
+
+11. [Attributes](#attributes)
+
+12. [Inline Assembly](#inline-assembly)
+
+13. [sizeof and alignof](#sizeof-and-alignof)
+
 
 ## Core Syntax
 
@@ -101,6 +122,7 @@ The `ent` language uses a very basic form of name mangeling, designed to balance
 | qword, sqword  | q, Q   |
 | single, double | f, F   |
 | struct         | s      |
+| vaargs         | v      |
 
 Pointers and arrays have special handling, where for each layer of a pointer a single `p` is appended before the type, and if type is an array, an `a` followed by the array size is appended before the type.
 
@@ -282,7 +304,7 @@ fn example_function() -> void {
 }
 ```
 
-#### Passing Variables into Functions 
+#### Passing variables into Functions
 
 When passing variables into functions, `ent` uses a pass-by-value by default, meaning each function gets a copy of each of the arguments. If the function needs to modify the original, it can explicitly take a pointer to a variable. More on [pointers](#pointers).
 
@@ -297,6 +319,45 @@ fn pass_by_reference(dword* a) -> void {
     *a += 10; // original value does change
 }
 ```
+
+##### Variadic Functions (Vaargs)
+
+While C uses a manual mechanism (`va_list`, `va_start`, `va_arg`, etc.) for handling variable argument lists, `ent` provides a **more streamlined** approach via a built-in `varargs` type. This design aims to be safer and more intuitive than the classic C solution.
+
+###### Declaring a Variadic Function
+
+To declare a variadic function, you replace the final parameter(s) with a `varargs` parameter. For instance:
+
+```rust
+fn my_printf(byte* format, varargs args) -> dword {
+    // function body
+}
+```
+
+###### Accessing Variadic Arguments
+
+Within the function, you can retrieve arguments from `args` through built-in methods that handle stepping through the parameters. Conceptually, the API looks like:
+
+```rust
+// this API is defined in the freestanding standart library
+fn next_byte(varargs* args) -> byte;
+fn next_word(varargs* args) -> word;
+fn next_dword(varargs* args) -> dword;
+fn next_qword(varargs* args) -> qword;
+fn next_sbyte(varargs* args) -> sbyte;
+fn next_sword(varargs* args) -> sword;
+fn next_sdword(varargs* args) -> sdword;
+fn next_sqword(varargs* args) -> sqword;
+fn next_single(varargs* args) -> single;
+fn next_double(varargs* args) -> double;
+```
+
+As you can see, pointers and structs are not natively suppored, and should be passed as the corresponding type. (on 32 bit architectures, pointers should be passed as `dword` and on 64 bit as `qword`)
+
+Under the hood, the `varargs` mechanism manages pointer offsets and type retrieval This design helps prevent common mistakes in classic C’s variadic functions and centralizes argument management through a standard, typed interface,
+while still providing freestanding flexibility.
+
+> **Note**: The final specifics belong to the freestanding standard library for ent, which is platform-agnostic. The language design ensures easy access to typed parameters.
 
 #### Function Return Values 
 
@@ -606,6 +667,31 @@ Attributes can be used to provide additional information about struct members fo
 
 // TODO
 
+### Bit Fields
+
+Bit fields in `ent` allow you to pack multiple integer sub-fields into a single underlying integer type. This is particularly useful for manipulating registers, protocol headers, or other low-level data where precise control over bit layout is required.
+
+#### Declaring Bit Fields
+
+Bit fields must be declared inside a struct. Each field is followed by a colon (`:`) and the number of bits it occupies. The underlying base type (e.g., `dword`, `qword`) dictates how the fields are stored in memory.
+
+```rust
+struct status_register {
+    dword carry : 1,
+    dword overflow : 1,
+    dword direction : 1,
+    dword interrupt : 1,
+    dword reserved : 12,
+    dword data : 16
+};
+```
+
+#### Memory Alignment and [packed]
+
+By default, bit fields follow the same alignment rules as other struct members. You can override alignment by applying struct attributes such as `[packed]` or `[aligned(N)]`. Marking the struct as `[packed]` removes extra padding between members:
+
+> **Note**: Be mindful of endianness—bit field layouts can vary across architectures. For cross-platform data, consider masks and shifts over bit fields.
+
 ## UFCS
 
 Uniform Function Call Syntax (UFCS) allows invoking functions as if they were methods on their first argument. This enhances readability and supports chaining.
@@ -701,3 +787,123 @@ fn main() -> void {
     printf("Point: (%d, %d)\n", p->x, p->y);
 }
 ```
+
+## Unions
+
+A `union` in `ent` is a type similar to a struct, except all union members share the same memory location. Only one member is valid at a time, but this allows multiple “views” of the same underlying data.
+
+### Declaring and Using Unions
+
+```rust
+union number_value {
+    dword integer_val,
+    single float_val,
+    byte bytes[4]
+};
+
+fn show_union_values(union number_value val) -> void {
+    printf("As integer: %d\n", val.integer_val);
+    printf("As float: %f\n", val.float_val);
+    printf("As bytes: %02x %02x %02x %02x\n",
+        val.bytes[0], val.bytes[1], val.bytes[2], val.bytes[3]);
+}
+```
+
+- **Size**: The union’s size is that of its largest member.
+- **Initialization**: You can initialize by designating a specific member:
+
+```rust
+union number_value nv = {.integer_val = 42};
+```
+- **Overwriting**: Storing a new value in one member overwrites the data for all others.
+
+## Enums
+
+Enums group together named integer constants under a single type, improving code readability over a series of unrelated defines or constants.
+
+### Declaring Enums
+
+```rust
+enum color {
+    COLOR_RED = 0,
+    COLOR_GREEN,
+    COLOR_BLUE,
+    COLOR_YELLOW
+};
+```
+
+If no explicit initializer is given, enum values default to ascending integers starting at `0`. Internally, `ent` typically stores enums as `dword` unless negative values or other constraints imply otherwise.
+
+## Attributes
+
+`ent` offers a unified attribute syntax that can be applied to functions, variables, parameters, and more. Attributes annotate the compiler with metadata or instructions (e.g. inline, deprecated, etc.).
+
+| Attribute       | Description                                                                 |
+|------------------|-----------------------------------------------------------------------------|
+| `null`          | No attribute specified.                                                    |
+| `const`         | Specifies that a variable or object is constant and cannot be modified.    |
+| `volatile`      | Indicates that a variable can be changed unexpectedly, often by hardware.  |
+| `static`        | Declares a static variable or function, with scope limited to its context. |
+| `inline`        | Suggests that the compiler should inline the function for optimization.    |
+| `packed`        | Ensures the structure has minimal memory alignment, without padding.       |
+| `aligned(N)`    | Specifies a particular memory alignment for variables or structures.       |
+| `noreturn`      | Declares that a function does not return to the caller.                    |
+| `deprecated("message")` | Marks a function or variable as deprecated, with an optional message.|
+
+You can place attributes:
+- After a function’s return type
+- After a variable name
+- After a struct declaration keyword
+- After a function parameter
+
+The syntax of attributes is comma separated in `[` brackets.
+
+## Inline Assembly
+
+For scenarios requiring direct hardware or instruction-level access, `ent` supports inline assembly blocks. The exact syntax can vary by target architecture and compiler toolchain; a conceptual approach might look like:
+
+```rust
+fn do_some_asm(dword value) -> dword {
+    asm {
+        mov eax, [value]
+        add eax, 5
+        // ...
+    }
+    return value;
+}
+```
+
+Inline assembly allows you to perform operations not directly expressible in high-level code.
+By default, the compiler performs an expencive save of the register state before each block, which can be disabled using the `[nosave]` attribute in the block.
+
+```rust
+asm [nosave] {
+        push eax // manually save the register to prevent undefined behaviour
+        mov eax, [value]
+        add eax, 5
+        pop eax // restore the register
+    }
+```
+
+## sizeof and alignof
+
+Like in C, `ent` provides `sizeof` and `alignof` operators to query the size and alignment requirements of types or expressions.
+
+- `sizeof`
+Yields the size in bytes of a type or variable. Evaluated at compile time:
+
+```rust
+dword size_int = sizeof(dword); // Typically 4 on many architectures
+dword size_struct = sizeof(struct gdt_descriptor);
+```
+
+- `alignof`
+Yields the alignment (in bytes) required by a type. Also evaluated at compile time:
+
+```rust
+dword align_int = alignof(dword);
+dword align_struct = alignof(struct gdt_descriptor);
+```
+
+Attributes such as `[packed]` or `[aligned(N)]` can influence these values.
+
