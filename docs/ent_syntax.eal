@@ -1,0 +1,512 @@
+/*
+    File: ent_syntax.eal
+
+    Description:
+    ------------
+    This file defines the core syntax (grammar) of the "ent" language,
+    *excluding* any preprocessor directives or features that get unwrapped before parsing.
+
+    Below is a grammar sketch using an EBNF-like notation, describing all
+    the constructs that will be parsed into an AST for ent.
+    Whitespace is generally ignored except as a separator.
+    Comments and error-handling are omitted here for clarity.
+    Some parts of the parser are not definable in EBNF, they are skipped with a comment.
+
+    Notation:
+      - Terminals (keywords, punctuation) are in quotes.
+      - Nonterminals are in CamelCase or snake_case.
+      - [ X ] means "X is optional"
+      - { X } means "X can repeat zero or more times"
+      - '|' separates alternatives
+      - Values after a new line end the separations, apply to all possible conclusions (usually can be seen with semicolons terminating all versions)
+
+*/
+
+
+//////////////////////////////////////////////////////////////
+// Lexical Items
+//////////////////////////////////////////////////////////////
+
+IDENTIFIER      = /* letter or underscore followed by letters, digits, underscores */;
+NUMBER_LITERAL  = /* decimal or possibly hex, e.g. 42, 0x2A */;
+STRING_LITERAL  = /* "text with possible escapes" */;
+
+
+//////////////////////////////////////////////////////////////
+// Attributes
+//////////////////////////////////////////////////////////////
+
+Attributes =
+    "[" Attribute { "," Attribute } "]"
+  | /* empty */
+;
+
+Attribute =
+    "packed"
+  | "aligned" "(" NumberLiteral ")"
+  | "inline"
+  | "noreturn"
+  | "deprecated" "(" StringLiteral ")"
+  | "const"
+  | "volatile"
+  | "static"
+;
+
+
+//////////////////////////////////////////////////////////////
+// Program
+//////////////////////////////////////////////////////////////
+
+Program = { TopLevelDeclaration } ;
+
+
+//////////////////////////////////////////////////////////////
+// 1. Top-Level Declarations
+//////////////////////////////////////////////////////////////
+
+TopLevelDeclaration =
+      GlobalVarDeclaration ";"
+    | FunctionPrototype
+    | FunctionDefinition
+    | StructDeclaration ";"
+    | UnionDeclaration ";"
+    | EnumDeclaration ";"
+    | TypedefDeclaration ";"
+;
+
+
+//////////////////////////////////////////////////////////////
+// 2. Global Variable Declarations
+//////////////////////////////////////////////////////////////
+//
+// Example:
+//    extern qword MADT_addr [const];
+//    dword someGlob[4] [volatile] = {1, 2, 3, 4};
+//
+GlobalVarDeclaration =
+    [ "extern" ] TypeSpec [ Attributes ] DeclaratorList
+;
+
+DeclaratorList =
+    Declarator { "," Declarator }
+;
+
+Declarator =
+    IDENTIFIER [ ArrayDimensions ] [ Attributes ] [ "=" Initializer ]
+  | "*" IDENTIFIER [ ArrayDimensions ] [ Attributes ] [ "=" Initializer ]
+  // e.g. "dword myglobal", "dword *myglobalptr", "byte arr[10]",
+  //      "byte *mystr [const] = \"abc\""
+;
+
+ArrayDimensions =
+    "[" NumberLiteral "]" { "[" NumberLiteral "]" }
+;
+
+Initializer =
+      ConstantExpression
+    | "{" InitializerList "}"
+;
+
+InitializerList =
+    Initializer { "," Initializer }
+;
+
+ConstantExpression =
+    // Same as an Expression but restricted to compile-time evaluable (not describable here lol)
+    Expression
+;
+
+
+//////////////////////////////////////////////////////////////
+// 3. Function Prototypes and Definitions
+//////////////////////////////////////////////////////////////
+//
+// Examples:
+//   fn my_function(dword a, qword b) -> void [inline, static] { ... }
+//   fn other_function() -> dword;
+//
+FunctionPrototype =
+    "fn" IDENTIFIER "(" [ ParameterList ] ")" "->" ReturnType [ Attributes ] ";"
+;
+
+FunctionDefinition =
+    "fn" IDENTIFIER "(" [ ParameterList ] ")" "->" ReturnType [ Attributes ] FunctionBody
+;
+
+ParameterList =
+    ParameterDecl { "," ParameterDecl }
+;
+
+ParameterDecl =
+    TypeSpec IDENTIFIER
+  | TypeSpec "varargs"
+;
+
+FunctionBody =
+    "{" { Statement } "}"
+;
+
+ReturnType =
+    TypeSpec
+  | "void"
+;
+
+
+//////////////////////////////////////////////////////////////
+// 4. Struct, Union, and Enum Declarations
+//////////////////////////////////////////////////////////////
+//
+// Example:
+//   struct [packed] gdt_descriptor {
+//       dword limit : 16;
+//       dword base_low : 24;
+//       ...
+//   };
+//   union [aligned(8)] big_union { dword i; qword q; };
+//   enum [const] color { RED=0, GREEN, BLUE };
+//
+
+////////////////////
+// 4.1 Struct
+////////////////////
+StructDeclaration =
+    "struct" [ Attributes ] IDENTIFIER [ Attributes ] [ StructBody ]
+;
+
+StructBody =
+    "{" { StructMember } "}"
+;
+
+StructMember =
+      TypeSpec [ Attributes ] MemberDeclaratorList ";"
+    | "struct" [ Attributes ] [ IDENTIFIER ] [ Attributes ] "{" { StructMember } "}" MemberDeclaratorList ";"
+    | "union"  [ Attributes ] [ IDENTIFIER ] [ Attributes ] "{" { UnionMember }  "}" MemberDeclaratorList ";"
+    | BitFieldDeclaration
+;
+
+MemberDeclaratorList =
+    MemberDeclarator { "," MemberDeclarator }
+;
+
+MemberDeclarator =
+    IDENTIFIER [ ArrayDimensions ] [ Attributes ]
+  | "*" IDENTIFIER [ ArrayDimensions ] [ Attributes ]
+;
+
+BitFieldDeclaration =
+    TypeSpec [ Attributes ] IDENTIFIER ":" NumberLiteral ";"
+;
+
+
+////////////////////
+// 4.2 Union
+////////////////////
+UnionDeclaration =
+    "union" [ Attributes ] IDENTIFIER [ Attributes ] [ UnionBody ]
+;
+
+UnionBody =
+    "{" { UnionMember } "}"
+;
+
+UnionMember =
+    TypeSpec [ Attributes ] MemberDeclaratorList ";"
+  | BitFieldDeclaration
+;
+
+
+////////////////////
+// 4.3 Enum
+////////////////////
+EnumDeclaration =
+    "enum" [ Attributes ] IDENTIFIER [ Attributes ] [ EnumBody ]
+;
+
+EnumBody =
+    "{" EnumList "}"
+;
+
+EnumList =
+    EnumItem { "," EnumItem } [ "," ]
+;
+
+EnumItem =
+    IDENTIFIER [ "=" NumberLiteral ]
+;
+
+
+//////////////////////////////////////////////////////////////
+// 5. Typedef Declaration
+//////////////////////////////////////////////////////////////
+//
+// Example:
+//   typedef dword size_t;
+//   typedef struct [packed] my_struct { ... } packed_struct_t;
+//
+TypedefDeclaration =
+    "typedef" TypeSpec
+  | "typedef" StructDeclaration
+  | "typedef" UnionDeclaration
+  | "typedef" EnumDeclaration
+[ Attributes ] IDENTIFIER ;
+
+
+//////////////////////////////////////////////////////////////
+// 6. Types
+//////////////////////////////////////////////////////////////
+//
+// Example: dword**, byte[10], IDENTIFIER*, etc.
+//
+TypeSpec =
+    BaseType { PointerOrArraySpec }
+  | IDENTIFIER { PointerOrArraySpec }
+;
+
+BaseType =
+    "byte" | "sbyte"
+  | "word" | "sword"
+  | "dword" | "sdword"
+  | "qword" | "sqword"
+  | "single" | "double"
+  | "vararg" | "void"
+;
+
+PointerOrArraySpec =
+    "*"
+  | "[" NumberLiteral "]"
+;
+
+
+//////////////////////////////////////////////////////////////
+// 7. Statements
+//////////////////////////////////////////////////////////////
+//
+// Each statement can be a block, a control-flow construct, a declaration, etc.
+//
+Statement =
+      BlockStatement
+    | VariableDeclarationStatement
+    | ExpressionStatement ";"
+    | ReturnStatement
+    | IfStatement
+    | SwitchStatement
+    | WhileStatement
+    | ForStatement
+    | TimesStatement
+    | ";"
+;
+
+
+////////////////////
+// 7.1 Block
+////////////////////
+BlockStatement =
+    "{" { Statement } "}"
+;
+
+
+////////////////////
+// 7.2 Local Variable Declaration
+////////////////////
+// e.g. dword localVar [static] = 1, otherVar;
+VariableDeclarationStatement =
+    TypeSpec [ Attributes ] DeclaratorList ";"
+;
+
+
+////////////////////
+// 7.3 Expression Statement
+////////////////////
+ExpressionStatement =
+    Expression
+;
+
+
+////////////////////
+// 7.4 Return
+////////////////////
+ReturnStatement =
+    "return" [ Expression ] ";"
+;
+
+
+////////////////////
+// 7.5 If-Else
+////////////////////
+IfStatement =
+    "if" "(" Expression ")" BlockStatement
+    [ "else" ( BlockStatement | IfStatement ) ]
+;
+
+
+////////////////////
+// 7.6 Switch
+////////////////////
+SwitchStatement =
+    "switch" "(" Expression ")" "{" { CaseClause } [ DefaultClause ] "}"
+;
+
+CaseClause =
+    "case" "(" CaseExpressionList ")" BlockStatement
+;
+
+CaseExpressionList =
+    Expression { "," Expression }
+;
+
+DefaultClause =
+    "default" BlockStatement
+;
+
+
+////////////////////
+// 7.7 While
+////////////////////
+WhileStatement =
+    "while" "(" Expression ")" BlockStatement
+;
+
+
+////////////////////
+// 7.8 For
+////////////////////
+ForStatement =
+    "for" "(" [ ForInit ] ";" [ Expression ] ";" [ ForStep ] ")" BlockStatement
+;
+
+ForInit =
+    VariableDeclarationStatement
+  | ExpressionStatement
+;
+
+ForStep =
+    Expression
+;
+
+
+////////////////////
+// 7.9 Times
+////////////////////
+TimesStatement =
+    "times" "(" Expression [ ":" TypeSpec IDENTIFIER ] ")" BlockStatement
+;
+
+
+//////////////////////////////////////////////////////////////
+// 8. Expressions
+//////////////////////////////////////////////////////////////
+Expression =
+    AssignmentExpression { "," AssignmentExpression }
+;
+
+AssignmentExpression =
+    ConditionalExpression
+  | UnaryExpression AssignmentOperator AssignmentExpression
+;
+
+AssignmentOperator =
+      "="
+    | "+=" | "-=" | "*=" | "/=" | "%="
+    | "&=" | "|=" | "^="
+;
+
+ConditionalExpression =
+    LogicalOrExpression [ "?" Expression ":" ConditionalExpression ]
+;
+
+LogicalOrExpression =
+    LogicalAndExpression { "||" LogicalAndExpression }
+;
+
+LogicalAndExpression =
+    BitwiseOrExpression { "&&" BitwiseOrExpression }
+;
+
+BitwiseOrExpression =
+    BitwiseXorExpression { "|" BitwiseXorExpression }
+;
+
+BitwiseXorExpression =
+    BitwiseAndExpression { "^" BitwiseAndExpression }
+;
+
+BitwiseAndExpression =
+    EqualityExpression { "&" EqualityExpression }
+;
+
+EqualityExpression =
+    RelationalExpression { ("==" | "!=") RelationalExpression }
+;
+
+RelationalExpression =
+    ShiftExpression { ("<" | ">" | "<=" | ">=") ShiftExpression }
+;
+
+ShiftExpression =
+    AddExpression { ("<<" | ">>") AddExpression }
+;
+
+AddExpression =
+    MulExpression { ("+" | "-") MulExpression }
+;
+
+MulExpression =
+    CastExpression { ("*" | "/" | "%") CastExpression }
+;
+
+CastExpression =
+    "(" TypeSpec ")" CastExpression
+  | UnaryExpression
+;
+
+UnaryExpression =
+    ( "++" | "--" | "!" | "~" | "+" | "-" ) UnaryExpression
+  | PostfixExpression
+;
+
+PostfixExpression =
+    PrimaryExpression { PostfixOp }
+;
+
+PostfixOp =
+      "[" Expression "]"
+    | "->" IDENTIFIER
+    | "." IDENTIFIER
+    | "(" [ ArgumentExpressionList ] ")"
+    | "++"
+    | "--"
+;
+
+ArgumentExpressionList =
+    Expression { "," Expression }
+;
+
+PrimaryExpression =
+    IDENTIFIER
+  | NUMBER_LITERAL
+  | STRING_LITERAL
+  | "(" Expression ")"
+;
+
+
+//////////////////////////////////////////////////////////////
+// 9. Inline Assembly
+//////////////////////////////////////////////////////////////
+//
+// Example usage:
+//   asm [nosave] {
+//       mov eax, 10
+//       push ebx
+//   }
+//
+AsmBlock =
+    "asm" [ Attributes ] "{" { AsmInstruction } "}"
+;
+
+AsmInstruction =
+    // architecture-specific assembly text, not further specified here
+    IDENTIFIER | ...
+;
+
+
+// End of File: ent_syntax.eal
