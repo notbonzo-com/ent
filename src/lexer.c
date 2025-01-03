@@ -132,7 +132,7 @@ static enum token_type lexer_identifier_type(const char *start, const size_t len
     }
 
     KW_MATCH("function",  TOKEN_FUNCTION)
-    KW_MATCH("fn",  TOKEN_FUNCTION)
+    KW_MATCH("fn",        TOKEN_FUNCTION)
     KW_MATCH("return",    TOKEN_RETURN)
     KW_MATCH("struct",    TOKEN_STRUCT)
     KW_MATCH("typedef",   TOKEN_TYPEDEF)
@@ -154,6 +154,17 @@ static enum token_type lexer_identifier_type(const char *start, const size_t len
     KW_MATCH("sword",     TOKEN_SWORD)
     KW_MATCH("sdword",    TOKEN_SDWORD)
     KW_MATCH("sqword",    TOKEN_SQWORD)
+    KW_MATCH("union",     TOKEN_UNION)
+    KW_MATCH("enum",      TOKEN_ENUM)
+    KW_MATCH("const",     TOKEN_CONST)
+    KW_MATCH("static",    TOKEN_STATIC)
+    KW_MATCH("inline",    TOKEN_INLINE)
+    KW_MATCH("volatile",  TOKEN_VOLATILE)
+    KW_MATCH("packed",    TOKEN_PACKED)
+    KW_MATCH("aligned",   TOKEN_ALIGNED)
+    KW_MATCH("noreturn",  TOKEN_NORETURN)
+    KW_MATCH("deprecated",TOKEN_DEPRECATED)
+    KW_MATCH("asm",       TOKEN_ASM)
 
 #undef KW_MATCH
     return TOKEN_IDENTIFIER;
