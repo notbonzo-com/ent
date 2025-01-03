@@ -45,4 +45,4 @@ void vcompiler_warning(const error_context_t* ctx, const char* format, va_list a
 }
 #endif
 
-#endif /* ERROR_H* /
+#endif /* ERROR_H */

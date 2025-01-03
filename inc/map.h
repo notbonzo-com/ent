@@ -42,8 +42,8 @@
  * @param KEY_T     The key type.
  * @param VAL_T     The value type.
  * @param NAME      Matches the name used in DECLARE_HASHMAP_TYPE.
- * @param HASH_FN   A function pointer for hashing a (const KEY_T*).
- * @param CMP_FN    A function pointer for comparing two (const KEY_T*).
+ * @param HASH_FN   A function pointer for hashing a (KEY_T*).
+ * @param CMP_FN    A function pointer for comparing two (KEY_T*).
  * @param KEY_PTR   1 if the key is dynamically allocated (and should be freed),
  *                  0 otherwise.
  * @param VAL_PTR   1 if the value is dynamically allocated (and should be freed),

@@ -51,4 +51,4 @@ void preprocessor_destroy(struct preprocessor* preprocessor);
 }
 #endif
 
-#endif /* PREPROCESSOR_H* /
+#endif /* PREPROCESSOR_H */

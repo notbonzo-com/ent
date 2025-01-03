@@ -44,7 +44,7 @@ static void lexer_track_newline(struct lexer* lexer) {
     lexer->column = 1;
 
     if (lexer->line_count == lexer->line_capacity) {
-        lexer->line_capacity* = 2;
+        lexer->line_capacity *= 2;
         lexer->line_starts = realloc(lexer->line_starts, lexer->line_capacity * sizeof(size_t));
     }
 
