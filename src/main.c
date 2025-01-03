@@ -20,7 +20,7 @@ int main(int argc, char *argv[]) {
     printf("--- Tokens ---\n");
     for (size_t i = 0; i < pp.tokens.size; i++) {
         const token_t *token = &pp.tokens.data[i];
-        printf("[%zu:%zu] %d: %.*s\n", token->line, token->column, token->type, (int)token->length, token->lexeme);
+        printf("[%s:%zu:%zu] %d: %.*s\n", token->filename_ref->filename, token->line, token->column, token->type, (int)token->length, token->lexeme);
     }
 
     preprocessor_destroy(&pp);

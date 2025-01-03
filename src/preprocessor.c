@@ -45,23 +45,6 @@ static void append_string(char** dest, const char* src);
 static int count_braces(const char* line);
 
 /* --------------------------------------------------------------------------
- * Helper functions
- * -------------------------------------------------------------------------- */
-
-static void trim_leading_whitespace(char* str)
-{
-    if (!str) return;
-    const char* p = str;
-    while (*p && isspace((unsigned char)*p)) {
-        p++;
-    }
-    if (p != str) {
-        const size_t len = strlen(p);
-        memmove(str, p, len + 1);
-    }
-}
-
-/* --------------------------------------------------------------------------
  * Conditional stack management
  * -------------------------------------------------------------------------- */
 
@@ -810,8 +793,6 @@ static ssize_t get_line(char** line_ptr, size_t* n, FILE* stream)
 
    * line_ptr = buf;
    * n       = size;
-
-    trim_leading_whitespace(*line_ptr);
 
     return (ssize_t)pos;
 }

@@ -8,6 +8,18 @@
 
 DEFINE_VECTOR_FUNCTIONS(token_t)
 
+void token_destroy(token_t* t)
+{
+    if (t->lexeme) {
+        SAFE_FREE(t->lexeme);
+        t->lexeme = nullptr;
+    }
+    if (t->filename_ref) {
+        filename_release(t->filename_ref);
+        t->filename_ref = nullptr;
+    }
+}
+
 static void lexer_scan_all(struct lexer* lexer);
 static void lexer_skip_whitespace_and_comments(struct lexer* lexer);
 
@@ -24,48 +36,57 @@ static char lexer_peek(const struct lexer* lexer)
     return lexer->source[lexer->position];
 }
 
+static char lexer_peek_offset(const struct lexer* lexer, size_t offset)
+{
+    size_t pos = lexer->position + offset;
+    if (lexer->source[pos] == '\0') {
+        return '\0';
+    }
+    return lexer->source[pos];
+}
+
 static const char* lexer_get_current_line(const struct lexer* lexer) {
     if (lexer->line == 0 || lexer->line > lexer->line_count) {
         return nullptr;
     }
 
-    const size_t start = lexer->line_starts[lexer->line - 1];
-    const size_t end = lexer->line < lexer->line_count
-                           ? lexer->line_starts[lexer->line] - 1
-                           : strlen(lexer->source);
+    const size_t start_idx = lexer->line_starts[lexer->line - 1];
+    const size_t end_idx   = (lexer->line < lexer->line_count)
+                                 ? (lexer->line_starts[lexer->line] - 1)
+                                 : strlen(lexer->source);
+    const size_t length    = end_idx > start_idx ? (end_idx - start_idx) : 0;
 
-    const size_t length = end - start;
-    const char* line = strndup(&lexer->source[start], length);
-    return line;
-}
-
-static void lexer_track_newline(struct lexer* lexer) {
-    lexer->line++;
-    lexer->column = 1;
-
-    if (lexer->line_count == lexer->line_capacity) {
-        lexer->line_capacity *= 2;
-        lexer->line_starts = realloc(lexer->line_starts, lexer->line_capacity * sizeof(size_t));
-    }
-
-    lexer->line_starts[lexer->line_count++] = lexer->position;
-}
-
-static char lexer_peek_offset(const struct lexer* lexer, size_t offset)
-{
-    for (size_t i = 0; i < offset; i++) {
-        if (lexer->source[i] == '\0') {
-            return '\0';
-        }
-    }
-    return lexer->source[lexer->position + offset];
+    char *line_text = malloc(length + 1);
+    memcpy(line_text, &lexer->source[start_idx], length);
+    line_text[length] = '\0';
+    return line_text;
 }
 
 static char lexer_advance(struct lexer* lexer)
 {
-    const char c = lexer->source[lexer->position];
+    if (lexer_is_at_end(lexer)) {
+        return '\0';
+    }
+
+    char c = lexer->source[lexer->position];
     lexer->position++;
-    lexer->column++;
+
+    if (c == '\n') {
+        lexer->line++;
+        lexer->column = 1;
+
+        if (lexer->line_count == lexer->line_capacity) {
+            lexer->line_capacity *= 2;
+            lexer->line_starts = (size_t*)realloc(
+                lexer->line_starts,
+                lexer->line_capacity * sizeof(size_t)
+            );
+        }
+        lexer->line_starts[lexer->line_count++] = lexer->position;
+    } else {
+        lexer->column++;
+    }
+
     return c;
 }
 
@@ -77,34 +98,41 @@ static bool lexer_match(struct lexer* lexer, const char expected)
     if (lexer->source[lexer->position] != expected) {
         return false;
     }
-    lexer->position++;
-    lexer->column++;
+    lexer_advance(lexer);
     return true;
 }
 
-static void lexer_add_token(struct lexer* lexer, const enum token_type type,
-                            const char* lexeme_start, const size_t length,
-                            const size_t line, const size_t column)
+static void lexer_add_token(struct lexer* lexer,
+                            const enum token_type type,
+                            const char *lexeme_start,
+                            const size_t length,
+                            const size_t line,
+                            const size_t column)
 {
     token_t token;
-    token.type   = type;
-    token.lexeme = strndup(lexeme_start, length);
-    token.length = length;
-    token.line   = line;
-    token.column = column;
+    token.type         = type;
+    token.lexeme       = (char*)malloc(length + 1);
+    memcpy(token.lexeme, lexeme_start, length);
+    token.lexeme[length] = '\0';
+
+    token.length       = length;
+    token.line         = line;
+    token.column       = column;
+
+    filename_retain(lexer->filename_ref);
+    token.filename_ref = lexer->filename_ref;
 
     token_t_vector_push_back(&lexer->tokens, token);
 }
 
-static error_context_t lexer_make_context(const struct lexer* lexer) {
+static error_context_t lexer_make_context(const struct lexer* lexer)
+{
     error_context_t ctx;
     ctx.module = "Lexer";
-    ctx.file = lexer->filename;
-    ctx.line = (int)lexer->line;
+    ctx.file   = lexer->filename_ref ? lexer->filename_ref->filename : "??";
+    ctx.line   = (int)lexer->line;
     ctx.column = (int)lexer->column;
-
     ctx.source_line = lexer_get_current_line(lexer);
-
     return ctx;
 }
 
@@ -112,12 +140,10 @@ static bool is_alpha_or_underscore(const char c)
 {
     return isalpha((unsigned char)c) || c == '_';
 }
-
 static bool is_alphanumeric_or_underscore(const char c)
 {
     return isalnum((unsigned char)c) || c == '_';
 }
-
 static bool is_whitespace(char c)
 {
     return c == ' ' || c == '\t' || c == '\r' || c == '\n';
@@ -181,8 +207,7 @@ static void lexer_scan_identifier(struct lexer* lexer)
     }
 
     const size_t length = lexer->position - start_pos;
-    const enum token_type ttype =
-        lexer_identifier_type(&lexer->source[start_pos], length);
+    const enum token_type ttype = lexer_identifier_type(&lexer->source[start_pos], length);
 
     lexer_add_token(lexer, ttype, &lexer->source[start_pos],
                     length, start_line, start_col);
@@ -233,10 +258,6 @@ static void lexer_scan_string(struct lexer* lexer)
     const size_t start_col  = lexer->column - 1;
 
     while (!lexer_is_at_end(lexer) && lexer_peek(lexer) != '"') {
-        if (lexer_peek(lexer) == '\n') {
-            lexer->line++;
-            lexer->column = 0;
-        }
         lexer_advance(lexer);
     }
 
@@ -262,55 +283,45 @@ static void lexer_scan_char_literal(struct lexer* lexer)
     const size_t start_col  = lexer->column - 1;
 
     while (!lexer_is_at_end(lexer) && lexer_peek(lexer) != '\'') {
-        if (lexer_peek(lexer) == '\n') {
-            const error_context_t ctx = lexer_make_context(lexer);
-            compiler_error(&ctx,
-                "Unterminated character literal (newline encountered)");
-            break;
-        }
         lexer_advance(lexer);
     }
 
     if (!lexer_is_at_end(lexer)) {
-        lexer_advance(lexer);
+        lexer_advance(lexer); /* consume the closing ' */
     } else {
         const error_context_t ctx = lexer_make_context(lexer);
-        compiler_error(&ctx, "Unterminated character literal at EOF.");
+        compiler_error(&ctx, "Unterminated character literal at EOF");
     }
 
     const size_t length = lexer->position - start_pos;
     lexer_add_token(lexer, TOKEN_CHARACTER_LITERAL,
-                    &lexer->source[start_pos],
-                    length, start_line, start_col);
+                    &lexer->source[start_pos], length,
+                    start_line, start_col);
 }
 
-static void lexer_skip_whitespace_and_comments(struct lexer* lexer) {
-    while (true) {
+static void lexer_skip_whitespace_and_comments(struct lexer* lexer)
+{
+    for (;;) {
         const char c = lexer_peek(lexer);
 
         if (is_whitespace(c)) {
-            if (c == '\n') {
-                lexer_track_newline(lexer);
-            }
             lexer_advance(lexer);
         }
         else if (c == '/' && lexer_peek_offset(lexer, 1) == '/') {
-            while (lexer_peek(lexer) != '\n' && !lexer_is_at_end(lexer)) {
+            lexer_advance(lexer); /* '/' */
+            lexer_advance(lexer); /* '/' */
+            while (!lexer_is_at_end(lexer) && lexer_peek(lexer) != '\n') {
                 lexer_advance(lexer);
             }
         }
         else if (c == '/' && lexer_peek_offset(lexer, 1) == '*') {
-            lexer_advance(lexer);
-            lexer_advance(lexer);
+            lexer_advance(lexer); /* '/' */
+            lexer_advance(lexer); /* '*' */
             while (!lexer_is_at_end(lexer)) {
-                if (lexer_peek(lexer) == '*' &&
-                    lexer_peek_offset(lexer, 1) == '/') {
-                    lexer_advance(lexer);
-                    lexer_advance(lexer);
+                if (lexer_peek(lexer) == '*' && lexer_peek_offset(lexer, 1) == '/') {
+                    lexer_advance(lexer); /* '*' */
+                    lexer_advance(lexer); /* '/' */
                     break;
-                }
-                if (lexer_peek(lexer) == '\n') {
-                    lexer_track_newline(lexer);
                 }
                 lexer_advance(lexer);
             }
@@ -465,19 +476,15 @@ static void lexer_scan_all(struct lexer* lexer)
             }
         }
     }
-
-    /* lexer_add_token(lexer, TOKEN_EOF, &lexer->source[lexer->position],
-                    0, lexer->line, lexer->column); */
-    /* what if we just dont do this :) */
 }
 
 void lexer_init(struct lexer* lexer, const char* source, const char* filename)
 {
     lexer->source   = source;
-    lexer->filename = filename;
     lexer->position = 0;
     lexer->line     = 1;
     lexer->column   = 1;
+    lexer->filename_ref = filename_create(filename);
     token_t_vector_init(&lexer->tokens);
 
     lexer->line_count = 1;
@@ -488,20 +495,61 @@ void lexer_init(struct lexer* lexer, const char* source, const char* filename)
     lexer_scan_all(lexer);
 }
 
-void lexer_destroy(struct lexer* lexer) {
+void lexer_destroy(struct lexer* lexer)
+{
     SAFE_FREE(lexer->line_starts);
+    lexer->line_starts = nullptr;
+
     for (size_t i = 0; i < token_t_vector_size(&lexer->tokens); i++) {
-        token_t* token = token_t_vector_at(&lexer->tokens, i);
-        SAFE_FREE(token->lexeme);
+        token_destroy(&lexer->tokens.data[i]);
     }
     token_t_vector_destroy(&lexer->tokens);
+
+    if (lexer->filename_ref) {
+        filename_release(lexer->filename_ref);
+        lexer->filename_ref = nullptr;
+    }
 }
 
-void lexer_add_tokens_to_vector(token_t_vector_t* origin, token_t_vector_t* tokens)
+void lexer_add_tokens_to_vector(token_t_vector_t *dest, const token_t_vector_t *src)
 {
-    for (size_t i = 0; i < token_t_vector_size(tokens); i++) {
-        token_t token =* token_t_vector_at(tokens, i);
-        token.lexeme = strdup(token.lexeme);
-        token_t_vector_push_back(origin, token);
+    for (size_t i = 0; i < src->size; i++) {
+        const token_t orig = src->data[i];
+        token_t copy;
+
+        copy.lexeme = strdup(orig.lexeme);
+        copy.length = orig.length;
+        copy.line   = orig.line;
+        copy.column = orig.column;
+        copy.type   = orig.type;
+
+        filename_retain(orig.filename_ref);
+        copy.filename_ref = orig.filename_ref;
+
+        token_t_vector_push_back(dest, copy);
     }
+}
+
+shared_filename_t* filename_create(const char* filename)
+{
+    shared_filename_t *ref = malloc(sizeof(shared_filename_t));
+    ref->filename = strdup(filename);
+    ref->refcount = 1;
+    return ref;
+}
+
+void filename_release(shared_filename_t* ref)
+{
+    assert(ref->refcount > 0);
+    ref->refcount--;
+    if (ref->refcount == 0) {
+        free(ref->filename);
+        free(ref);
+    }
+}
+
+void filename_retain(shared_filename_t* ref)
+{
+    assert(ref->refcount > 0);
+    ref->refcount++;
 }

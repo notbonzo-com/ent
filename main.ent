@@ -1,3 +1,5 @@
 header {
     include "constants.ent"
 }
+
+    dword;      int;

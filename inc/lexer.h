@@ -4,6 +4,17 @@
 #include <vector.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <string.h>
+#include <assert.h>
+
+typedef struct shared_filename {
+    char* filename;
+    size_t refcount;
+} shared_filename_t;
+
+void filename_retain(shared_filename_t* ref);
+void filename_release(shared_filename_t* ref);
+shared_filename_t* filename_create(const char* filename);
 
 enum token_type {
     TOKEN_IDENTIFIER,
@@ -81,25 +92,26 @@ typedef struct {
     size_t length;
     size_t line;
     size_t column;
+    shared_filename_t* filename_ref;
 } token_t;
 
 DECLARE_VECTOR_TYPE(token_t)
 
 struct lexer {
-    const char* filename;
-    const char *source;
+    shared_filename_t* filename_ref;
+    const char* source;
     size_t position;
     size_t line;
     size_t column;
     token_t_vector_t tokens;
 
-    size_t *line_starts;
+    size_t* line_starts;
     size_t line_count;
     size_t line_capacity;
 };
 
-void lexer_init(struct lexer *lexer, const char *source, const char* filename);
-void lexer_destroy(struct lexer *lexer);
+void lexer_init(struct lexer* lexer, const char* source, const char* filename);
+void lexer_destroy(struct lexer* lexer);
 
 /**
  * @brief Function appends the argument of tokens to the origin vector
@@ -107,6 +119,8 @@ void lexer_destroy(struct lexer *lexer);
  * @param origin has to be non-volatile tokens get appended here
  * @param tokens can be free'd after use, tokens are copied from here
  */
-void lexer_add_tokens_to_vector(token_t_vector_t* origin, token_t_vector_t* tokens);
+void lexer_add_tokens_to_vector(token_t_vector_t* origin, const token_t_vector_t* tokens);
+
+void token_destroy(token_t *t);
 
 #endif /* LEXER_H */
