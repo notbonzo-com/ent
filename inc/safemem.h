@@ -1,6 +1,8 @@
 #ifndef SAFEMEM_H
 #define SAFEMEM_H
 
+#include <stdlib.h>
+
 #define SAFE_FREE(obj) \
   do {                 \
     if (obj) {         \
