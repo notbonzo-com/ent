@@ -79,7 +79,7 @@ static void conditional_stack_push(struct preprocessor* pp, const bool in_true_b
             fatal_error(&ctx, "Out of memory expanding conditional stack");
         }
     }
-    
+
     pp->conditional_stack[pp->conditional_stack_size++] = (struct preprocessor_conditional_state){
         .in_true_block = in_true_block,
         .condition_met = false, /* set to true later if met */
@@ -130,7 +130,7 @@ static bool evaluate_condition(const struct preprocessor* pp, const char* condit
 
     bool both_numeric = true;
     for (const char* p = defined_value;* p; p++) {
-        if ((*p < '0' ||* p > '9') &&* p != '-') { 
+        if ((*p < '0' ||* p > '9') &&* p != '-') {
             both_numeric = false;
             break;
         }
@@ -199,7 +199,7 @@ static bool handle_conditional_directive(struct preprocessor* pp, const char* li
     while (*line == ' ') line++;
 
     if (strncmp(line, "@ifdef", 6) == 0 &&
-        (line[6] == ' ' || line[6] == '\0')) 
+        (line[6] == ' ' || line[6] == '\0'))
     {
         const char* symbol = line + 6;
         while (*symbol == ' ') symbol++;
@@ -221,7 +221,7 @@ static bool handle_conditional_directive(struct preprocessor* pp, const char* li
     }
 
     if (strncmp(line, "@if", 3) == 0 &&
-        (line[3] == ' ' || line[3] == '\0')) 
+        (line[3] == ' ' || line[3] == '\0'))
     {
         const char* condition = line + 3;
         while (*condition == ' ') condition++;
@@ -237,7 +237,7 @@ static bool handle_conditional_directive(struct preprocessor* pp, const char* li
     }
 
     if (strncmp(line, "@elif", 5) == 0 &&
-        (line[5] == ' ' || line[5] == '\0')) 
+        (line[5] == ' ' || line[5] == '\0'))
     {
         const char* condition = line + 5;
         while (*condition == ' ') condition++;
@@ -422,7 +422,7 @@ static void process_line(struct preprocessor* pp,
                          const regex_t* include_regex)
 {
     pp->current_column = 1;
-    
+
     /* If we're in a header block, defer to the header-based function */
     if (pp->in_header_block) {
         process_line_in_header(pp, line, header_start_regex, define_regex, include_regex);
@@ -431,7 +431,8 @@ static void process_line(struct preprocessor* pp,
 
     /* 1) conditional directive? */
     if (handle_conditional_directive(pp, line)) {
-        return; 
+        append_string(&pp->preprocessed_file, "\n");
+        return;
     }
 
     /* 2) inactive block? */
@@ -447,10 +448,12 @@ static void process_line(struct preprocessor* pp,
     }
     if (regexec(define_regex, line, 0, nullptr, 0) == 0) {
         handle_define(pp, line, define_regex);
+        append_string(&pp->preprocessed_file, "\n");
         return;
     }
     if (regexec(include_regex, line, 0, nullptr, 0) == 0) {
         handle_include(pp, line, include_regex);
+        append_string(&pp->preprocessed_file, "\n");
         return;
     }
 
@@ -467,6 +470,8 @@ static void process_line_in_header(struct preprocessor* pp,
 {
     /* conditional directive? */
     if (handle_conditional_directive(pp, line)) {
+        append_string(&pp->preprocessed_file, "\n");
+        append_string(&pp->header_content, "\n");
         return;
     }
 
@@ -484,10 +489,14 @@ static void process_line_in_header(struct preprocessor* pp,
     }
     if (regexec(define_regex, line, 0, nullptr, 0) == 0) {
         handle_define(pp, line, define_regex);
+        append_string(&pp->preprocessed_file, "\n");
+        append_string(&pp->header_content, "\n");
         return;
     }
     if (regexec(include_regex, line, 0, nullptr, 0) == 0) {
         handle_include(pp, line, include_regex);
+        append_string(&pp->preprocessed_file, "\n");
+        append_string(&pp->header_content, "\n");
         return;
     }
 
@@ -529,7 +538,7 @@ static void process_line_in_header(struct preprocessor* pp,
             SAFE_FREE(processed_line);
         }
         pp->in_header_block = false;
-    } 
+    }
     else {
         append_string(&pp->header_content, line);
         append_string(&pp->header_content, "\n");
@@ -630,7 +639,8 @@ static void handle_header_start(struct preprocessor* pp, const char* line)
             }
         }
         pp->in_header_block = false;
-    } 
+        append_string(&pp->preprocessed_file, "\n");
+    }
     else {
         append_string(&pp->header_content, after_brace);
         append_string(&pp->header_content, "\n");
