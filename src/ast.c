@@ -5,9 +5,9 @@ char* ast_attribute_names[AST_ATTRIBUTE_COUNT] = {
     "nullptr", "const", "volatile", "static", "inline", "packed", "aligned", "noreturn", "deprecated"
 };
 
-struct ast_common *ast_create_node(const enum ast_code code)
+struct ast_common* ast_create_node(const enum ast_code code)
 {
-    struct ast_common *node = malloc(sizeof(struct ast_common));
+    struct ast_common* node = malloc(sizeof(struct ast_common));
     if (!node)
         return nullptr;
 
@@ -19,7 +19,7 @@ struct ast_common *ast_create_node(const enum ast_code code)
     return node;
 }
 
-void ast_destroy_node(struct ast_common *node)
+void ast_destroy_node(struct ast_common* node)
 {
     if (!node)
         return;
@@ -27,9 +27,9 @@ void ast_destroy_node(struct ast_common *node)
     SAFE_FREE(node);
 }
 
-struct ast_node_list *ast_create_node_list(void)
+struct ast_node_list* ast_create_node_list(void)
 {
-    struct ast_node_list *list = malloc(sizeof(struct ast_node_list));
+    struct ast_node_list* list = malloc(sizeof(struct ast_node_list));
     if (!list)
         return nullptr;
 
@@ -44,7 +44,7 @@ struct ast_node_list *ast_create_node_list(void)
     return list;
 }
 
-void ast_destroy_node_list(struct ast_node_list *list)
+void ast_destroy_node_list(struct ast_node_list* list)
 {
     if (!list)
         return;
@@ -60,14 +60,14 @@ void ast_destroy_node_list(struct ast_node_list *list)
     SAFE_FREE(list);
 }
 
-void ast_node_list_append(struct ast_node_list *list, struct ast_common *element)
+void ast_node_list_append(struct ast_node_list* list, struct ast_common* element)
 {
     if (!list)
         return;
 
     const size_t old_length = list->length;
     const size_t new_length = old_length + 1;
-    struct ast_common **new_array = realloc(list->elements, sizeof(struct ast_common *) * new_length);
+    struct ast_common* *new_array = realloc(list->elements, sizeof(struct ast_common* ) * new_length);
 
     if (!new_array)
         return;

@@ -8,15 +8,15 @@
 
 DEFINE_VECTOR_FUNCTIONS(token_t)
 
-static void lexer_scan_all(struct lexer *lexer);
-static void lexer_skip_whitespace_and_comments(struct lexer *lexer);
+static void lexer_scan_all(struct lexer* lexer);
+static void lexer_skip_whitespace_and_comments(struct lexer* lexer);
 
-static bool lexer_is_at_end(const struct lexer *lexer)
+static bool lexer_is_at_end(const struct lexer* lexer)
 {
     return lexer->source[lexer->position] == '\0';
 }
 
-static char lexer_peek(const struct lexer *lexer)
+static char lexer_peek(const struct lexer* lexer)
 {
     if (lexer_is_at_end(lexer)) {
         return '\0';
@@ -24,7 +24,7 @@ static char lexer_peek(const struct lexer *lexer)
     return lexer->source[lexer->position];
 }
 
-static const char* lexer_get_current_line(const struct lexer *lexer) {
+static const char* lexer_get_current_line(const struct lexer* lexer) {
     if (lexer->line == 0 || lexer->line > lexer->line_count) {
         return nullptr;
     }
@@ -35,23 +35,23 @@ static const char* lexer_get_current_line(const struct lexer *lexer) {
                            : strlen(lexer->source);
 
     const size_t length = end - start;
-    const char *line = strndup(&lexer->source[start], length);
+    const char* line = strndup(&lexer->source[start], length);
     return line;
 }
 
-static void lexer_track_newline(struct lexer *lexer) {
+static void lexer_track_newline(struct lexer* lexer) {
     lexer->line++;
     lexer->column = 1;
 
     if (lexer->line_count == lexer->line_capacity) {
-        lexer->line_capacity *= 2;
+        lexer->line_capacity* = 2;
         lexer->line_starts = realloc(lexer->line_starts, lexer->line_capacity * sizeof(size_t));
     }
 
     lexer->line_starts[lexer->line_count++] = lexer->position;
 }
 
-static char lexer_peek_offset(const struct lexer *lexer, size_t offset)
+static char lexer_peek_offset(const struct lexer* lexer, size_t offset)
 {
     for (size_t i = 0; i < offset; i++) {
         if (lexer->source[i] == '\0') {
@@ -61,7 +61,7 @@ static char lexer_peek_offset(const struct lexer *lexer, size_t offset)
     return lexer->source[lexer->position + offset];
 }
 
-static char lexer_advance(struct lexer *lexer)
+static char lexer_advance(struct lexer* lexer)
 {
     const char c = lexer->source[lexer->position];
     lexer->position++;
@@ -69,7 +69,7 @@ static char lexer_advance(struct lexer *lexer)
     return c;
 }
 
-static bool lexer_match(struct lexer *lexer, const char expected)
+static bool lexer_match(struct lexer* lexer, const char expected)
 {
     if (lexer_is_at_end(lexer)) {
         return false;
@@ -82,8 +82,8 @@ static bool lexer_match(struct lexer *lexer, const char expected)
     return true;
 }
 
-static void lexer_add_token(struct lexer *lexer, const enum token_type type,
-                            const char *lexeme_start, const size_t length,
+static void lexer_add_token(struct lexer* lexer, const enum token_type type,
+                            const char* lexeme_start, const size_t length,
                             const size_t line, const size_t column)
 {
     token_t token;
@@ -96,7 +96,7 @@ static void lexer_add_token(struct lexer *lexer, const enum token_type type,
     token_t_vector_push_back(&lexer->tokens, token);
 }
 
-static error_context_t lexer_make_context(const struct lexer *lexer) {
+static error_context_t lexer_make_context(const struct lexer* lexer) {
     error_context_t ctx;
     ctx.module = "Lexer";
     ctx.file = lexer->filename;
@@ -123,7 +123,7 @@ static bool is_whitespace(char c)
     return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
 
-static enum token_type lexer_identifier_type(const char *start, const size_t length)
+static enum token_type lexer_identifier_type(const char* start, const size_t length)
 {
 #define KW_MATCH(str, ttype)                                        \
     if (length == (sizeof(str) - 1) &&                               \
@@ -170,7 +170,7 @@ static enum token_type lexer_identifier_type(const char *start, const size_t len
     return TOKEN_IDENTIFIER;
 }
 
-static void lexer_scan_identifier(struct lexer *lexer)
+static void lexer_scan_identifier(struct lexer* lexer)
 {
     const size_t start_pos  = lexer->position - 1;
     const size_t start_line = lexer->line;
@@ -188,7 +188,7 @@ static void lexer_scan_identifier(struct lexer *lexer)
                     length, start_line, start_col);
 }
 
-static void lexer_scan_number(struct lexer *lexer)
+static void lexer_scan_number(struct lexer* lexer)
 {
     const size_t start_pos  = lexer->position - 1;
     const size_t start_line = lexer->line;
@@ -226,7 +226,7 @@ static void lexer_scan_number(struct lexer *lexer)
                     length, start_line, start_col);
 }
 
-static void lexer_scan_string(struct lexer *lexer)
+static void lexer_scan_string(struct lexer* lexer)
 {
     const size_t start_pos  = lexer->position - 1;
     const size_t start_line = lexer->line;
@@ -255,7 +255,7 @@ static void lexer_scan_string(struct lexer *lexer)
                     length, start_line, start_col);
 }
 
-static void lexer_scan_char_literal(struct lexer *lexer)
+static void lexer_scan_char_literal(struct lexer* lexer)
 {
     const size_t start_pos  = lexer->position - 1;
     const size_t start_line = lexer->line;
@@ -284,7 +284,7 @@ static void lexer_scan_char_literal(struct lexer *lexer)
                     length, start_line, start_col);
 }
 
-static void lexer_skip_whitespace_and_comments(struct lexer *lexer) {
+static void lexer_skip_whitespace_and_comments(struct lexer* lexer) {
     while (true) {
         const char c = lexer_peek(lexer);
 
@@ -321,7 +321,7 @@ static void lexer_skip_whitespace_and_comments(struct lexer *lexer) {
     }
 }
 
-static void lexer_scan_all(struct lexer *lexer)
+static void lexer_scan_all(struct lexer* lexer)
 {
     while (!lexer_is_at_end(lexer)) {
         lexer_skip_whitespace_and_comments(lexer);
@@ -471,7 +471,7 @@ static void lexer_scan_all(struct lexer *lexer)
     /* what if we just dont do this :) */
 }
 
-void lexer_init(struct lexer *lexer, const char *source, const char* filename)
+void lexer_init(struct lexer* lexer, const char* source, const char* filename)
 {
     lexer->source   = source;
     lexer->filename = filename;
@@ -488,10 +488,10 @@ void lexer_init(struct lexer *lexer, const char *source, const char* filename)
     lexer_scan_all(lexer);
 }
 
-void lexer_destroy(struct lexer *lexer) {
+void lexer_destroy(struct lexer* lexer) {
     SAFE_FREE(lexer->line_starts);
     for (size_t i = 0; i < token_t_vector_size(&lexer->tokens); i++) {
-        token_t *token = token_t_vector_at(&lexer->tokens, i);
+        token_t* token = token_t_vector_at(&lexer->tokens, i);
         SAFE_FREE(token->lexeme);
     }
     token_t_vector_destroy(&lexer->tokens);
@@ -500,7 +500,7 @@ void lexer_destroy(struct lexer *lexer) {
 void lexer_add_tokens_to_vector(token_t_vector_t* origin, token_t_vector_t* tokens)
 {
     for (size_t i = 0; i < token_t_vector_size(tokens); i++) {
-        token_t token = *token_t_vector_at(tokens, i);
+        token_t token =* token_t_vector_at(tokens, i);
         token.lexeme = strdup(token.lexeme);
         token_t_vector_push_back(origin, token);
     }

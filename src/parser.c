@@ -8,16 +8,16 @@
 constexpr uint64_t FNV_OFFSET_BASIS = 1469598103934665603ULL;
 constexpr uint64_t FNV_PRIME        = 1099511628211ULL;
 static uint64_t parser_fnv1a_hash_string(char** string) {
-    const char* str = *string;
+    const char* str =* string;
     uint64_t hash = FNV_OFFSET_BASIS;
-    for (; *str; ++str) {
+    for (;* str; ++str) {
         hash ^= (unsigned char)(*str);
-        hash *= FNV_PRIME;
+        hash* = FNV_PRIME;
     }
     return hash;
 }
 static int parser_strcmp_wrapper(char** a, char** b) {
-    return strcmp(*a, *b);
+    return strcmp(*a,* b);
 }
 
 DEFINE_HASHMAP_FUNCTIONS(
@@ -38,8 +38,8 @@ const char* base_types[13] = {
     "single", "double", /* not a base type but used for mappings: */ "struct"
 };
 
-static error_context_t make_error_context(const parser_t *p) {
-    const token_t *t = nullptr;
+static error_context_t make_error_context(const parser_t* p) {
+    const token_t* t = nullptr;
     if (p->current < p->tokens->size) {
         t = &p->tokens->data[p->current];
     }
@@ -52,29 +52,29 @@ static error_context_t make_error_context(const parser_t *p) {
     return ctx;
 }
 
-static token_t* peek_token(const parser_t *p) {
+static token_t* peek(const parser_t* p) {
     if (p->current < p->tokens->size) {
         return &p->tokens->data[p->current];
     }
     return nullptr;
 }
 
-static bool check_token(const parser_t *p, const enum token_type type) {
-    const token_t *t = peek_token(p);
-    return (t != NULL && t->type == type);
+static bool check(const parser_t* p, const enum token_type type) {
+    const token_t* t = peek(p);
+    return (t != nullptr && t->type == type);
 }
 
-static bool match_token(parser_t *p, const enum token_type type) {
-    if (check_token(p, type)) {
+static bool match(parser_t* p, const enum token_type type) {
+    if (check(p, type)) {
         p->current++;
         return true;
     }
     return false;
 }
 
-static token_t* consume_token(parser_t *p, const enum token_type type, const char *error_msg) {
-    token_t *t = peek_token(p);
-    if (t == NULL) {
+static token_t* consume(parser_t* p, const enum token_type type, const char* error_msg) {
+    token_t* t = peek(p);
+    if (t == nullptr) {
         const error_context_t ctx = make_error_context(p);
         compiler_error(&ctx, "Unexpected end of file. %s", error_msg);
         p->error_count++;
@@ -90,11 +90,23 @@ static token_t* consume_token(parser_t *p, const enum token_type type, const cha
     return nullptr;
 }
 
-static struct ast_common* create_ast_node(const parser_t *p, const enum ast_code code) {
+static token_t* advance(parser_t* p) {
+    token_t* t = peek(p);
+    if (t == nullptr) {
+        const error_context_t ctx = make_error_context(p);
+        compiler_error(&ctx, "Unexpected end of file.");
+        p->error_count++;
+        return nullptr;
+    }
+    p->current++;
+    return t;
+}
+
+static struct ast_common* create_ast_node(const parser_t* p, const enum ast_code code) {
     struct ast_common* node = ast_create_node(code);
     if (!node) return nullptr;
 
-    const token_t *t = peek_token(p);
+    const token_t* t = peek(p);
     if (t) {
         node->filename = t->lexeme;
         node->line     = (int)t->line;
@@ -103,27 +115,28 @@ static struct ast_common* create_ast_node(const parser_t *p, const enum ast_code
     return node;
 }
 
-static struct ast_common* parse_declaration(parser_t *p);
-static struct ast_function_def* parse_function_def(parser_t *p);
-static struct ast_common* parse_statement(parser_t *p);
-static struct ast_common* parse_expression(parser_t *p);
-
-void parser_init(parser_t *p, token_t_vector_t *tokens) {
+void parser_init(parser_t* p, token_t_vector_t* tokens) {
     p->tokens = tokens;
     p->current = 0;
     p->error_count = 0;
     strmap_init(&p->type_to_base_mapping, 10);
 }
 
-void parser_destroy(parser_t *p) {
+void parser_destroy(parser_t* p) {
     p->tokens = nullptr;
     p->current = 0;
     p->error_count = 0;
     strmap_destroy(&p->type_to_base_mapping);
 }
 
-struct ast_translation_unit* parse_translation_unit(const parser_t *p) {
-    struct ast_translation_unit *unit =
+/* ------------------------------------------------------------------- */
+
+static struct ast_node_list* parse_function_parameters(parser_t* p);
+
+/* ------------------------------------------------------------------- */
+
+struct ast_translation_unit* parse_translation_unit(parser_t* p) {
+    struct ast_translation_unit* unit =
         (struct ast_translation_unit*) ast_create_node(AST_CODE_TRANSLATION_UNIT);
     if (!unit) return nullptr;
 
@@ -131,12 +144,15 @@ struct ast_translation_unit* parse_translation_unit(const parser_t *p) {
 
     /* Repeatedly parse declarations or definitions until out of tokens. */
     while (p->current < p->tokens->size) {
-        token_t *tk = peek_token(p);
+        token_t* tk = peek(p);
         if (!tk) break;
 
         switch (tk->type) {
             case TOKEN_FUNCTION: {
-
+                advance(p);
+                const token_t* nameToken = advance(p);
+                const char* name = nameToken->lexeme;
+                struct ast_node_list* params = parse_function_parameters(p);
             }
             case TOKEN_EXTERN: {
 

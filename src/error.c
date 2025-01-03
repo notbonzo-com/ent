@@ -4,7 +4,7 @@
 #include <stdarg.h>
 #include <string.h>
 
-static void print_error_header(const error_context_t *ctx, const char *level_color, const char *level_name)
+static void print_error_header(const error_context_t* ctx, const char* level_color, const char* level_name)
 {
     fprintf(stderr, ANSI_BOLD_WHITE "ents: %s%s:%s ", level_color, level_name, ANSI_RESET);
     if (ctx->module) {
@@ -28,13 +28,13 @@ static void print_error_header(const error_context_t *ctx, const char *level_col
     }
 }
 
-static void print_error_message(const char *format, va_list args)
+static void print_error_message(const char* format, va_list args)
 {
     vfprintf(stderr, format, args);
     fprintf(stderr, "\n");
 }
 
-static void handle_error(const error_context_t *ctx, const char *level_color, const char *level_name, const char *format, va_list args, int fatal)
+static void handle_error(const error_context_t* ctx, const char* level_color, const char* level_name, const char* format, va_list args, int fatal)
 {
     print_error_header(ctx, level_color, level_name);
     print_error_message(format, args);
@@ -45,23 +45,23 @@ static void handle_error(const error_context_t *ctx, const char *level_color, co
     }
 }
 
-[[noreturn]] void vfatal_error(const error_context_t *ctx, const char *format, va_list args)
+[[noreturn]] void vfatal_error(const error_context_t* ctx, const char* format, va_list args)
 {
     handle_error(ctx, ANSI_BOLD_RED, "fatal error", format, args, 1);
     __builtin_unreachable();
 }
 
-void vcompiler_error(const error_context_t *ctx, const char *format, va_list args)
+void vcompiler_error(const error_context_t* ctx, const char* format, va_list args)
 {
     handle_error(ctx, ANSI_BOLD_RED, "error", format, args, 0);
 }
 
-void vcompiler_warning(const error_context_t *ctx, const char *format, va_list args)
+void vcompiler_warning(const error_context_t* ctx, const char* format, va_list args)
 {
     handle_error(ctx, ANSI_BOLD_YELLOW, "warning", format, args, 0);
 }
 
-[[noreturn]] void fatal_error(const error_context_t *ctx, const char *format, ...)
+[[noreturn]] void fatal_error(const error_context_t* ctx, const char* format, ...)
 {
     va_list args;
     va_start(args, format);
@@ -70,7 +70,7 @@ void vcompiler_warning(const error_context_t *ctx, const char *format, va_list a
     va_end(args);
 }
 
-void compiler_error(const error_context_t *ctx, const char *format, ...)
+void compiler_error(const error_context_t* ctx, const char* format, ...)
 {
     va_list args;
     va_start(args, format);
@@ -78,7 +78,7 @@ void compiler_error(const error_context_t *ctx, const char *format, ...)
     va_end(args);
 }
 
-void compiler_warning(const error_context_t *ctx, const char *format, ...)
+void compiler_warning(const error_context_t* ctx, const char* format, ...)
 {
     va_list args;
     va_start(args, format);

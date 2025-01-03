@@ -22,9 +22,9 @@ typedef enum {
 } error_level_t;
 
 typedef struct {
-    const char *module;
-    const char *file;
-    const char *source_line;
+    const char* module;
+    const char* file;
+    const char* source_line;
     int line;
     int column;
 } error_context_t;
@@ -33,16 +33,16 @@ typedef struct {
 extern "C" {
 #endif
 
-[[noreturn]] void fatal_error(const error_context_t *ctx, const char *format, ...);
-void compiler_error(const error_context_t *ctx, const char *format, ...);
-void compiler_warning(const error_context_t *ctx, const char *format, ...);
+[[noreturn]] void fatal_error(const error_context_t* ctx, const char* format, ...);
+void compiler_error(const error_context_t* ctx, const char* format, ...);
+void compiler_warning(const error_context_t* ctx, const char* format, ...);
 
-[[noreturn]] void vfatal_error(const error_context_t *ctx, const char *format, va_list args);
-void vcompiler_error(const error_context_t *ctx, const char *format, va_list args);
-void vcompiler_warning(const error_context_t *ctx, const char *format, va_list args);
+[[noreturn]] void vfatal_error(const error_context_t* ctx, const char* format, va_list args);
+void vcompiler_error(const error_context_t* ctx, const char* format, va_list args);
+void vcompiler_warning(const error_context_t* ctx, const char* format, va_list args);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* ERROR_H */
+#endif /* ERROR_H* /

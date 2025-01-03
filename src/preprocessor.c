@@ -32,26 +32,26 @@
     } while (0)
 
 
-static ssize_t get_line(char **line_ptr, size_t *n, FILE *stream);
-static error_context_t make_error_context(const struct preprocessor *pp, const char *file, int line);
-static void process_line(struct preprocessor *pp, const char *line, const regex_t *header_start_regex, regex_t *define_regex, const regex_t *include_regex);
-static void process_line_in_header(struct preprocessor *pp, const char *line, const regex_t *header_start_regex, regex_t *define_regex, const regex_t *include_regex);
-static void handle_include(struct preprocessor *pp, const char *line, const regex_t *include_regex);
-static void handle_header_start(struct preprocessor *pp, const char *line);
-static void handle_define(struct preprocessor *pp, const char *line, regex_t *define_regex);
-static void merge_defines(struct preprocessor *dest, const struct preprocessor *src);
+static ssize_t get_line(char** line_ptr, size_t* n, FILE* stream);
+static error_context_t make_error_context(const struct preprocessor* pp, const char* file, int line);
+static void process_line(struct preprocessor* pp, const char* line, const regex_t* header_start_regex, regex_t* define_regex, const regex_t* include_regex);
+static void process_line_in_header(struct preprocessor* pp, const char* line, const regex_t* header_start_regex, regex_t* define_regex, const regex_t* include_regex);
+static void handle_include(struct preprocessor* pp, const char* line, const regex_t* include_regex);
+static void handle_header_start(struct preprocessor* pp, const char* line);
+static void handle_define(struct preprocessor* pp, const char* line, regex_t* define_regex);
+static void merge_defines(struct preprocessor* dest, const struct preprocessor* src);
 
-static void append_string(char **dest, const char *src);
-static int count_braces(const char *line);
+static void append_string(char** dest, const char* src);
+static int count_braces(const char* line);
 
 /* --------------------------------------------------------------------------
  * Helper functions
  * -------------------------------------------------------------------------- */
 
-static void trim_leading_whitespace(char *str)
+static void trim_leading_whitespace(char* str)
 {
     if (!str) return;
-    const char *p = str;
+    const char* p = str;
     while (*p && isspace((unsigned char)*p)) {
         p++;
     }
@@ -65,7 +65,7 @@ static void trim_leading_whitespace(char *str)
  * Conditional stack management
  * -------------------------------------------------------------------------- */
 
-static void conditional_stack_push(struct preprocessor *pp, const bool in_true_block) {
+static void conditional_stack_push(struct preprocessor* pp, const bool in_true_block) {
     if (pp->conditional_stack_size == pp->conditional_stack_capacity) {
         pp->conditional_stack_capacity = pp->conditional_stack_capacity
                                          ? pp->conditional_stack_capacity * 2
@@ -86,7 +86,7 @@ static void conditional_stack_push(struct preprocessor *pp, const bool in_true_b
     };
 }
 
-static void conditional_stack_pop(struct preprocessor *pp) {
+static void conditional_stack_pop(struct preprocessor* pp) {
     if (pp->conditional_stack_size == 0) {
         const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
         fatal_error(&ctx, "Mismatched @endif encountered");
@@ -94,7 +94,7 @@ static void conditional_stack_pop(struct preprocessor *pp) {
     pp->conditional_stack_size--;
 }
 
-static struct preprocessor_conditional_state *conditional_stack_top(const struct preprocessor *pp) {
+static struct preprocessor_conditional_state* conditional_stack_top(const struct preprocessor* pp) {
     if (pp->conditional_stack_size == 0) return nullptr;
     return &pp->conditional_stack[pp->conditional_stack_size - 1];
 }
@@ -104,7 +104,7 @@ static struct preprocessor_conditional_state *conditional_stack_top(const struct
  * Condition evaluation
  * -------------------------------------------------------------------------- */
 
-static bool evaluate_condition(const struct preprocessor *pp, const char *condition)
+static bool evaluate_condition(const struct preprocessor* pp, const char* condition)
 {
     char symbol[256] = {0};
     char operator_str[4] = {0};
@@ -116,7 +116,7 @@ static bool evaluate_condition(const struct preprocessor *pp, const char *condit
         fatal_error(&ctx, "Malformed condition: '%s'. Expected format: SYMBOL <op> VALUE", condition);
     }
 
-    char *defined_value = nullptr;
+    char* defined_value = nullptr;
     for (size_t i = 0; i < pp->define_count; i++) {
         if (strcmp(pp->defines[i].name, symbol) == 0) {
             defined_value = pp->defines[i].value;
@@ -129,14 +129,14 @@ static bool evaluate_condition(const struct preprocessor *pp, const char *condit
     }
 
     bool both_numeric = true;
-    for (const char *p = defined_value; *p; p++) {
-        if ((*p < '0' || *p > '9') && *p != '-') { 
+    for (const char* p = defined_value;* p; p++) {
+        if ((*p < '0' ||* p > '9') &&* p != '-') { 
             both_numeric = false;
             break;
         }
     }
-    for (const char *p = operand; *p; p++) {
-        if ((*p < '0' || *p > '9') && *p != '-') {
+    for (const char* p = operand;* p; p++) {
+        if ((*p < '0' ||* p > '9') &&* p != '-') {
             both_numeric = false;
             break;
         }
@@ -194,14 +194,14 @@ static bool evaluate_condition(const struct preprocessor *pp, const char *condit
 }
 
 /* Can add more conditionals later */
-static bool handle_conditional_directive(struct preprocessor *pp, const char *line)
+static bool handle_conditional_directive(struct preprocessor* pp, const char* line)
 {
     while (*line == ' ') line++;
 
     if (strncmp(line, "@ifdef", 6) == 0 &&
         (line[6] == ' ' || line[6] == '\0')) 
     {
-        const char *symbol = line + 6;
+        const char* symbol = line + 6;
         while (*symbol == ' ') symbol++;
 
         bool defined = false;
@@ -214,7 +214,7 @@ static bool handle_conditional_directive(struct preprocessor *pp, const char *li
 
         conditional_stack_push(pp, defined);
 
-        struct preprocessor_conditional_state *st = conditional_stack_top(pp);
+        struct preprocessor_conditional_state* st = conditional_stack_top(pp);
         st->condition_met = defined;
 
         return true;
@@ -223,14 +223,14 @@ static bool handle_conditional_directive(struct preprocessor *pp, const char *li
     if (strncmp(line, "@if", 3) == 0 &&
         (line[3] == ' ' || line[3] == '\0')) 
     {
-        const char *condition = line + 3;
+        const char* condition = line + 3;
         while (*condition == ' ') condition++;
 
         const bool condition_result = evaluate_condition(pp, condition);
 
         conditional_stack_push(pp, condition_result);
 
-        struct preprocessor_conditional_state *st = conditional_stack_top(pp);
+        struct preprocessor_conditional_state* st = conditional_stack_top(pp);
         st->condition_met = condition_result;
 
         return true;
@@ -239,10 +239,10 @@ static bool handle_conditional_directive(struct preprocessor *pp, const char *li
     if (strncmp(line, "@elif", 5) == 0 &&
         (line[5] == ' ' || line[5] == '\0')) 
     {
-        const char *condition = line + 5;
+        const char* condition = line + 5;
         while (*condition == ' ') condition++;
 
-        struct preprocessor_conditional_state *state = conditional_stack_top(pp);
+        struct preprocessor_conditional_state* state = conditional_stack_top(pp);
         if (!state) {
             const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
             fatal_error(&ctx, "Mismatched @elif encountered without a prior @if/@ifdef");
@@ -263,7 +263,7 @@ static bool handle_conditional_directive(struct preprocessor *pp, const char *li
     if (strncmp(line, "@else", 5) == 0 &&
         (line[5] == ' ' || line[5] == '\0' || line[5] == '\n' || line[5] == '\r'))
     {
-        struct preprocessor_conditional_state *state = conditional_stack_top(pp);
+        struct preprocessor_conditional_state* state = conditional_stack_top(pp);
         if (!state) {
             const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
             fatal_error(&ctx, "Mismatched @else encountered without a prior @if/@ifdef");
@@ -295,7 +295,7 @@ static bool handle_conditional_directive(struct preprocessor *pp, const char *li
  * Preprocessor API interface
  * -------------------------------------------------------------------------- */
 
-struct preprocessor preprocessor_create(const char *filename, bool disable_lexer)
+struct preprocessor preprocessor_create(const char* filename, bool disable_lexer)
 {
     struct preprocessor pp = {nullptr};
 
@@ -320,7 +320,7 @@ struct preprocessor preprocessor_create(const char *filename, bool disable_lexer
     REGEX_CHECK_OR_FATAL(&pp, &define_regex,       DEFINE_REGEX,  REG_EXTENDED | REG_NEWLINE);
     REGEX_CHECK_OR_FATAL(&pp, &include_regex,      INCLUDE_REGEX, REG_EXTENDED);
 
-    char   *linebuf  = nullptr;
+    char  * linebuf  = nullptr;
     size_t  bufsize  = 0;
     ssize_t linelen  = 0;
 
@@ -370,7 +370,7 @@ struct preprocessor preprocessor_create(const char *filename, bool disable_lexer
     return pp;
 }
 
-void preprocessor_destroy(struct preprocessor *preprocessor)
+void preprocessor_destroy(struct preprocessor* preprocessor)
 {
     if (!preprocessor) return;
 
@@ -409,17 +409,17 @@ void preprocessor_destroy(struct preprocessor *preprocessor)
     preprocessor->conditional_stack = nullptr;
 
     for (size_t i = 0; i < token_t_vector_size(&preprocessor->tokens); i++) {
-        token_t *token = token_t_vector_at(&preprocessor->tokens, i);
+        token_t* token = token_t_vector_at(&preprocessor->tokens, i);
         SAFE_FREE(token->lexeme);
     }
     token_t_vector_destroy(&preprocessor->tokens);
 }
 
-static void process_line(struct preprocessor *pp,
-                         const char *line,
-                         const regex_t *header_start_regex,
-                         regex_t *define_regex,
-                         const regex_t *include_regex)
+static void process_line(struct preprocessor* pp,
+                         const char* line,
+                         const regex_t* header_start_regex,
+                         regex_t* define_regex,
+                         const regex_t* include_regex)
 {
     pp->current_column = 1;
     
@@ -435,7 +435,7 @@ static void process_line(struct preprocessor *pp,
     }
 
     /* 2) inactive block? */
-    const struct preprocessor_conditional_state *state = conditional_stack_top(pp);
+    const struct preprocessor_conditional_state* state = conditional_stack_top(pp);
     if (state && !state->in_true_block) {
         return;
     }
@@ -459,11 +459,11 @@ static void process_line(struct preprocessor *pp,
     append_string(&pp->preprocessed_file, "\n");
 }
 
-static void process_line_in_header(struct preprocessor *pp,
-                                   const char *line,
-                                   const regex_t *header_start_regex,
-                                   regex_t *define_regex,
-                                   const regex_t *include_regex)
+static void process_line_in_header(struct preprocessor* pp,
+                                   const char* line,
+                                   const regex_t* header_start_regex,
+                                   regex_t* define_regex,
+                                   const regex_t* include_regex)
 {
     /* conditional directive? */
     if (handle_conditional_directive(pp, line)) {
@@ -471,7 +471,7 @@ static void process_line_in_header(struct preprocessor *pp,
     }
 
     /* inactive block? */
-    const struct preprocessor_conditional_state *state = conditional_stack_top(pp);
+    const struct preprocessor_conditional_state* state = conditional_stack_top(pp);
     if (state && !state->in_true_block) {
         return;
     }
@@ -503,10 +503,10 @@ static void process_line_in_header(struct preprocessor *pp,
         int    local_balance  = line_braces;
         size_t search_pos     = 0;
         const size_t line_len = strlen(line);
-        char  *processed_line = nullptr;
+        char * processed_line = nullptr;
 
         while (local_balance < 0 && search_pos < line_len) {
-            char *brace_ptr = strchr(&line[search_pos], '}');
+            char* brace_ptr = strchr(&line[search_pos], '}');
             if (!brace_ptr) break;
             local_balance++;
             if (local_balance == 0) {
@@ -539,9 +539,9 @@ static void process_line_in_header(struct preprocessor *pp,
     }
 }
 
-static void handle_include(struct preprocessor *pp,
-                           const char *line,
-                           const regex_t *include_regex)
+static void handle_include(struct preprocessor* pp,
+                           const char* line,
+                           const regex_t* include_regex)
 {
     regmatch_t matches[2];
     if (regexec(include_regex, line, 2, matches, 0) != 0) {
@@ -556,7 +556,7 @@ static void handle_include(struct preprocessor *pp,
     const regoff_t end   = matches[1].rm_eo;
     const size_t length  = end - start;
 
-    char *include_path = calloc(length + 1, sizeof(char));
+    char* include_path = calloc(length + 1, sizeof(char));
     strncpy(include_path, &line[start], length);
 
     /* Check for include cycle */
@@ -591,7 +591,7 @@ static void handle_include(struct preprocessor *pp,
     preprocessor_destroy(&sub);
 }
 
-static void handle_header_start(struct preprocessor *pp, const char *line)
+static void handle_header_start(struct preprocessor* pp, const char* line)
 {
     pp->in_header_block = true;
 
@@ -604,21 +604,21 @@ static void handle_header_start(struct preprocessor *pp, const char *line)
     pp->brace_balance += line_braces;
 
     /* find the '{' */
-    const char *brace_pos = strchr(line, '{');
+    const char* brace_pos = strchr(line, '{');
     if (!brace_pos) {
         const error_context_t ctx = make_error_context(pp, __FILE__, __LINE__);
         fatal_error(&ctx, "Malformed header line, missing '{': '%s'", line);
     }
-    const char *after_brace = brace_pos + 1;
+    const char* after_brace = brace_pos + 1;
 
     /* If we opened and closed on the same line */
     if (pp->brace_balance == 0) {
         /* extract content between '{' and '}' */
-        const char *closing_brace = strrchr(after_brace, '}');
+        const char* closing_brace = strrchr(after_brace, '}');
         if (closing_brace) {
             const size_t content_len = (size_t)(closing_brace - after_brace);
             if (content_len > 0) {
-                char *content = calloc(content_len + 1, sizeof(char));
+                char* content = calloc(content_len + 1, sizeof(char));
                 strncpy(content, after_brace, content_len);
 
                 append_string(&pp->header_content, content);
@@ -640,9 +640,9 @@ static void handle_header_start(struct preprocessor *pp, const char *line)
     }
 }
 
-static void handle_define(struct preprocessor *pp,
-                          const char *line,
-                          regex_t *define_regex)
+static void handle_define(struct preprocessor* pp,
+                          const char* line,
+                          regex_t* define_regex)
 {
     regmatch_t matches[3];
     /* capturing group #1 => name, group #2 => value */
@@ -675,8 +675,8 @@ static void handle_define(struct preprocessor *pp,
         fatal_error(&ctx, "Missing value in define: '%s'", line);
     }
 
-    char *name  = calloc(name_len + 1,  sizeof(char));
-    char *value = calloc(value_len + 1, sizeof(char));
+    char* name  = calloc(name_len + 1,  sizeof(char));
+    char* value = calloc(value_len + 1, sizeof(char));
     strncpy(name,  &line[start_name],  name_len);
     strncpy(value, &line[start_value], value_len);
 
@@ -699,11 +699,11 @@ static void handle_define(struct preprocessor *pp,
     pp->define_count++;
 }
 
-static void merge_defines(struct preprocessor *dest, const struct preprocessor *src)
+static void merge_defines(struct preprocessor* dest, const struct preprocessor* src)
 {
     for (size_t i = 0; i < src->define_count; i++) {
-        const char *sub_name  = src->defines[i].name;
-        const char *sub_value = src->defines[i].value;
+        const char* sub_name  = src->defines[i].name;
+        const char* sub_value = src->defines[i].value;
 
         for (size_t j = 0; j < dest->define_count; j++) {
             if (strcmp(dest->defines[j].name, sub_name) == 0) {
@@ -717,8 +717,8 @@ static void merge_defines(struct preprocessor *dest, const struct preprocessor *
         const size_t name_len  = strlen(sub_name);
         const size_t value_len = strlen(sub_value);
 
-        char *name_cpy  = calloc(name_len + 1, sizeof(char));
-        char *value_cpy = calloc(value_len + 1, sizeof(char));
+        char* name_cpy  = calloc(name_len + 1, sizeof(char));
+        char* value_cpy = calloc(value_len + 1, sizeof(char));
 
         strcpy(name_cpy,  sub_name);
         strcpy(value_cpy, sub_value);
@@ -735,43 +735,43 @@ static void merge_defines(struct preprocessor *dest, const struct preprocessor *
     }
 }
 
-static void append_string(char **dest, const char *src)
+static void append_string(char** dest, const char* src)
 {
     if (!src) return;
     if (!*dest) {
         const size_t len = strlen(src);
-        *dest = calloc(len + 1, sizeof(char));
+       * dest = calloc(len + 1, sizeof(char));
         strcpy(*dest, src);
     } else {
         const size_t old_len = strlen(*dest);
         const size_t src_len = strlen(src);
-        char  *temp    = realloc(*dest, old_len + src_len + 1);
+        char * temp    = realloc(*dest, old_len + src_len + 1);
         if (!temp) {
             SAFE_FREE(*dest);
-            *dest = nullptr;
+           * dest = nullptr;
             return;
         }
-        *dest = temp;
+       * dest = temp;
         strcpy(*dest + old_len, src);
     }
 }
 
-static int count_braces(const char *line)
+static int count_braces(const char* line)
 {
     int balance = 0;
-    for (const char *p = line; *p; p++) {
+    for (const char* p = line;* p; p++) {
         if (*p == '{') balance++;
         if (*p == '}') balance--;
     }
     return balance;
 }
 
-static ssize_t get_line(char **line_ptr, size_t *n, FILE *stream)
+static ssize_t get_line(char** line_ptr, size_t* n, FILE* stream)
 {
     if (!line_ptr || !n || !stream) return -1;
 
-    size_t size = *n > 0 ? *n : 128;
-    char  *buf  = *line_ptr ? *line_ptr : malloc(size);
+    size_t size =* n > 0 ?* n : 128;
+    char * buf  =* line_ptr ?* line_ptr : malloc(size);
     if (!buf) return -1;
 
     size_t pos = 0;
@@ -779,7 +779,7 @@ static ssize_t get_line(char **line_ptr, size_t *n, FILE *stream)
     while ((c = fgetc(stream)) != EOF) {
         if (pos + 1 >= size) {
             const size_t new_size = size * 2;
-            char *temp = realloc(buf, new_size);
+            char* temp = realloc(buf, new_size);
             if (!temp) {
                 SAFE_FREE(buf);
                 return -1;
@@ -793,21 +793,21 @@ static ssize_t get_line(char **line_ptr, size_t *n, FILE *stream)
 
     if (pos == 0 && c == EOF) {
         SAFE_FREE(buf);
-        *line_ptr = nullptr;
+       * line_ptr = nullptr;
         return -1;
     }
     buf[pos] = '\0';
 
-    *line_ptr = buf;
-    *n       = size;
+   * line_ptr = buf;
+   * n       = size;
 
     trim_leading_whitespace(*line_ptr);
 
     return (ssize_t)pos;
 }
 
-static error_context_t make_error_context(const struct preprocessor *pp, 
-                                          const char *file, 
+static error_context_t make_error_context(const struct preprocessor* pp, 
+                                          const char* file, 
                                           int line)
 {
     error_context_t ctx;
